@@ -40,7 +40,7 @@ export default function Home() {
     )
   }
 
-  const editTask = (id: string) => {
+  const editTask = (_id: string) => {
     // Implement edit functionality
   }
 

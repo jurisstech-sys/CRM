@@ -9,7 +9,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 // SQL Schema with all tables and configurations
-const SQL_SCHEMA = `
+const _SQL_SCHEMA = `
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -273,6 +273,7 @@ const DEFAULT_PIPELINE_STAGES = [
   { name: 'Lost', description: 'Deal lost', position: 7, color: '#6B7280', is_won_stage: false, is_lost_stage: true },
 ]
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function checkTablesExist(supabase: any): Promise<boolean> {
   try {
     // Try to query one of the tables to check if it exists
@@ -316,7 +317,7 @@ export async function GET() {
 }
 
 // POST /api/setup - Initialize the database
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json(
@@ -357,7 +358,8 @@ export async function POST(request: NextRequest) {
       message: 'Database initialized successfully',
       stages_created: stages?.length || DEFAULT_PIPELINE_STAGES.length,
     })
-  } catch (error: any) {
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   } catch (error: any) {
     console.error('Error initializing database:', error)
     return NextResponse.json(
       { 
