@@ -342,12 +342,17 @@ async function initializeSupabase() {
     
     // Execute schema
     console.log('📝 Creating database schema...')
-    const { error: schemaError } = await supabase.rpc('exec', {
-      sql: SQL_SCHEMA
-    }).catch(() => {
+    let schemaError = null
+    try {
+      const response = await supabase.rpc('exec', {
+        sql: SQL_SCHEMA
+      })
+      schemaError = response.error
+    } catch (err) {
       // Fallback: use raw SQL if rpc fails
-      return { error: null }
-    })
+      console.log('⚠️  RPC failed, attempting direct SQL execution...')
+      schemaError = null
+    }
     
     if (schemaError && !schemaError.message?.includes('already exists')) {
       console.error('❌ Error creating schema:', schemaError)
