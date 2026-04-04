@@ -18,3 +18,8 @@ out
 .deploy
 .logs
 *.tsbuildinfo
+
+# Environment variables
+.env.local
+.env.*.local
+.env
