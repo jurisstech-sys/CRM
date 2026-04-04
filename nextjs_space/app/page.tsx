@@ -1,93 +1,76 @@
 'use client'
 
-import { useState } from 'react'
-import { TaskCard } from '@/components/ui/task-card'
-import { TaskForm } from '@/components/task-form'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-interface Task {
-  id: string
-  title: string
-  description: string
-  category: string
-  completed: boolean
-}
+import { useEffect, useState } from 'react'
 
 export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [filter, setFilter] = useState('all')
+  const [isClient, setIsClient] = useState(false)
 
-  const addTask = (task: Omit<Task, 'id' | 'completed'>) => {
-    setTasks([
-      ...tasks,
-      {
-        ...task,
-        id: Math.random().toString(36).substr(2, 9),
-        completed: false,
-      },
-    ])
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  if (!isClient) {
+    return null
   }
-
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter((task) => task.id !== id))
-  }
-
-  const toggleComplete = (id: string, completed: boolean) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, completed } : task
-      )
-    )
-  }
-
-  const editTask = (_id: string) => {
-    // Implement edit functionality
-  }
-
-  const filteredTasks = tasks.filter((task) => {
-    if (filter === 'all') return true
-    if (filter === 'completed') return task.completed
-    if (filter === 'active') return !task.completed
-    return task.category === filter
-  })
 
   return (
-    <main className="container mx-auto p-4 max-w-4xl">
-      <div className="flex flex-col space-y-8">
-        <div className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">Task Manager</h1>
-          <TaskForm onSubmit={addTask} />
-        </div>
+    <main className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      <div className="container mx-auto px-4 py-20">
+        <div className="max-w-2xl mx-auto text-center">
+          <h1 className="text-5xl font-bold mb-6">JurisIA CRM</h1>
+          <p className="text-xl text-slate-300 mb-8">
+            Sistema de Gerenciamento de Relacionamento com Clientes para Escritórios de Advocacia
+          </p>
+          
+          <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-8 mb-8">
+            <h2 className="text-2xl font-semibold mb-4">Bem-vindo! 👋</h2>
+            <p className="text-slate-300 mb-6">
+              Esta é a página inicial do JurisIA CRM. O sistema está pronto para ser explorado.
+            </p>
+            
+            <div className="space-y-4">
+              <a
+                href="/dashboard"
+                className="inline-block w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Acessar Dashboard
+              </a>
+              
+              <button
+                onClick={() => window.location.href = '/login'}
+                className="inline-block w-full px-6 py-3 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition-colors"
+              >
+                Fazer Login
+              </button>
+            </div>
+          </div>
 
-        <div className="flex justify-between items-center">
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filter tasks" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Tasks</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="Work">Work</SelectItem>
-              <SelectItem value="Personal">Personal</SelectItem>
-              <SelectItem value="Urgent">Urgent</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
+            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-2">📊 Gestão de Clientes</h3>
+              <p className="text-sm text-slate-400">
+                Centralize todas as informações dos seus clientes em um único lugar
+              </p>
+            </div>
+            
+            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-2">📝 Gerenciamento de Processos</h3>
+              <p className="text-sm text-slate-400">
+                Acompanhe o progresso de cada processo legal em tempo real
+              </p>
+            </div>
+            
+            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-2">📅 Agenda e Tarefas</h3>
+              <p className="text-sm text-slate-400">
+                Organize suas atividades e nunca perca um prazo importante
+              </p>
+            </div>
+          </div>
 
-        <div className="grid gap-4">
-          {filteredTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              {...task}
-              onComplete={toggleComplete}
-              onDelete={deleteTask}
-              onEdit={editTask}
-            />
-          ))}
-          {filteredTasks.length === 0 && (
-            <p className="text-center text-muted-foreground">No tasks found</p>
-          )}
+          <div className="mt-12 text-slate-400 text-sm">
+            <p>JurisIA CRM © 2024 - Todos os direitos reservados</p>
+          </div>
         </div>
       </div>
     </main>
