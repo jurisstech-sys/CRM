@@ -13,7 +13,7 @@ interface Stage {
 interface KanbanColumnProps {
   stage: Stage
   leads: Lead[]
-  onDeleteLead: (id: string) => void
+  onDeleteLead?: (id: string) => void
   onUpdateLead: (lead: Lead) => void
   isUpdating: boolean
 }
@@ -82,7 +82,7 @@ function DroppableColumn({
 
 interface SortableLeadCardProps {
   lead: Lead
-  onDelete: (id: string) => void
+  onDelete?: (id: string) => void
   onUpdate: (lead: Lead) => void
   isUpdating: boolean
 }

@@ -25,6 +25,9 @@ import KanbanColumn from './KanbanColumn'
 
 interface KanbanBoardProps {
   onCreateLead?: () => void
+  isAdminUser?: boolean
+  canDeleteLeads?: boolean
+  currentUserId?: string | null
 }
 
 interface PipelineData {
@@ -38,7 +41,7 @@ const PIPELINE_STAGES = [
   { id: 'won', title: 'Fechado', color: 'bg-green-50' },
 ]
 
-export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
+export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads = false, currentUserId }: KanbanBoardProps) {
   const [leads, setLeads] = useState<PipelineData>({
     new: [],
     qualified: [],
@@ -67,12 +70,13 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
   // Fetch leads from Supabase
   useEffect(() => {
     fetchLeads()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminUser, currentUserId])
 
   const fetchLeads = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('leads')
         .select(`
           *,
@@ -80,6 +84,13 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
         `)
         .in('status', ['new', 'qualified', 'proposal', 'won'])
         .order('created_at', { ascending: false })
+
+      // Comercial users only see their own leads
+      if (!isAdminUser && currentUserId) {
+        query = query.eq('created_by', currentUserId)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
 
@@ -91,6 +102,7 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
         won: [],
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data?.forEach((lead: any) => {
         const mappedLead: Lead = {
           id: lead.id,
@@ -218,6 +230,11 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
   }
 
   const handleDeleteLead = async (leadId: string) => {
+    if (!canDeleteLeads) {
+      toast.error('Você não tem permissão para deletar leads')
+      return
+    }
+
     try {
       setUpdatingId(leadId)
       
@@ -364,7 +381,7 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
               key={stage.id}
               stage={stage}
               leads={leads[stage.id]}
-              onDeleteLead={handleDeleteLead}
+              onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
               onUpdateLead={handleUpdateLead}
               isUpdating={updatingId !== null}
             />

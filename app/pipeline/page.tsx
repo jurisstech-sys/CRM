@@ -23,6 +23,7 @@ import {
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { Loader2 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 
 interface NewLeadForm {
   title: string
@@ -46,6 +47,8 @@ export default function PipelinePage() {
     probability: '50',
     client_id: '',
   })
+
+  const { isAdmin, canDelete: userCanDelete, userId } = usePermissions()
 
   const handleCreateLead = async () => {
     if (!formData.title.trim()) {
@@ -110,7 +113,12 @@ export default function PipelinePage() {
   return (
     <AppLayout>
       <div className="space-y-6 pb-12">
-        <KanbanBoard onCreateLead={() => setIsCreateDialogOpen(true)} />
+        <KanbanBoard
+          onCreateLead={() => setIsCreateDialogOpen(true)}
+          isAdminUser={isAdmin}
+          canDeleteLeads={userCanDelete}
+          currentUserId={userId}
+        />
 
         {/* Create Lead Dialog */}
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>

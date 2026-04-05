@@ -9,6 +9,7 @@ import { Plus, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { logActivity } from '@/lib/activities'
+import { usePermissions } from '@/hooks/usePermissions'
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -17,17 +18,29 @@ export default function ClientsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
 
+  const { isAdmin, canDelete: userCanDelete, canEditAll, userId, loading: permLoading } = usePermissions()
+
   useEffect(() => {
-    loadClients()
-  }, [])
+    if (!permLoading && userId) {
+      loadClients()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permLoading, userId, isAdmin])
 
   const loadClients = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('clients')
         .select('*')
         .order('created_at', { ascending: false })
+
+      // Comercial users only see their own clients
+      if (!isAdmin && userId) {
+        query = query.eq('created_by', userId)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
 
@@ -74,7 +87,7 @@ export default function ClientsPage() {
             ...formData,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            created_by: 'system', // TODO: Use actual user ID
+            created_by: userId || 'system',
           },
         ]).select()
 
@@ -110,6 +123,11 @@ export default function ClientsPage() {
   }
 
   const handleDelete = async (id: string) => {
+    if (!userCanDelete) {
+      toast.error('Você não tem permissão para deletar clientes')
+      return
+    }
+
     try {
       // Get client name before deletion for logging
       const clientToDelete = clients.find(c => c.id === id)
@@ -148,7 +166,9 @@ export default function ClientsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
             <p className="text-muted-foreground mt-2">
-              Gerencie todos os seus clientes e informações de contato
+              {isAdmin
+                ? 'Gerencie todos os clientes e informações de contato'
+                : 'Gerencie seus clientes e informações de contato'}
             </p>
           </div>
           <Button onClick={handleNewClient} className="gap-2">
@@ -157,7 +177,7 @@ export default function ClientsPage() {
           </Button>
         </div>
 
-        {loading ? (
+        {loading || permLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
@@ -167,6 +187,8 @@ export default function ClientsPage() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             isLoading={submitting}
+            canEdit={canEditAll || true}
+            canDeleteRecords={userCanDelete}
           />
         )}
       </div>

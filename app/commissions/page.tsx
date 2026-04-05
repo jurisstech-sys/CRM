@@ -5,7 +5,9 @@ import { AppLayout } from '@/components/layout/app-layout'
 import { Card } from '@/components/ui/card'
 import { CommissionTable, Commission } from '@/components/commissions/CommissionTable'
 import {
+  CommissionData,
   getUserCommissionsByMonth,
+  getAllCommissionsByMonth,
   updateCommissionStatus,
   getMonthlyCommissionSummary,
 } from '@/lib/commissions'
@@ -14,6 +16,7 @@ import { DollarSign, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { usePermissions } from '@/hooks/usePermissions'
 
 interface User {
   id: string
@@ -41,8 +44,10 @@ export default function CommissionsPage() {
     paidCommissions: 0,
     averageCommission: 0,
   })
-  const [users, setUsers] = useState<Map<string, string>>(new Map())
-  const [leads, setLeads] = useState<Map<string, string>>(new Map())
+  const [, setUsers] = useState<Map<string, string>>(new Map())
+  const [, setLeads] = useState<Map<string, string>>(new Map())
+
+  const { isAdmin, canManageCommissions, userId, loading: permLoading } = usePermissions()
 
   useEffect(() => {
     // Set current month
@@ -50,16 +55,27 @@ export default function CommissionsPage() {
     const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     setCurrentMonth(monthStr)
 
-    // Fetch initial data
-    fetchData(monthStr)
-  }, [])
+    if (!permLoading && userId) {
+      fetchData(monthStr)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permLoading, userId, isAdmin])
 
   const fetchData = async (month: string) => {
     try {
       setLoading(true)
 
-      // Fetch commissions for current month
-      const commissionsData = await getUserCommissionsByMonth('current_user', month)
+      // Fetch commissions based on role
+      let commissionsData: CommissionData[] = []
+      if (isAdmin) {
+        // Admin sees all commissions
+        commissionsData = await getAllCommissionsByMonth(month)
+      } else if (userId) {
+        // Comercial sees only their own commissions
+        commissionsData = await getUserCommissionsByMonth(userId, month)
+      } else {
+        commissionsData = []
+      }
 
       // Fetch all users for name mapping
       const { data: usersData } = await supabase
@@ -106,6 +122,11 @@ export default function CommissionsPage() {
   }
 
   const handleStatusChange = async (commissionId: string, newStatus: string) => {
+    if (!canManageCommissions) {
+      toast.error('Apenas administradores podem alterar o status das comissões')
+      return
+    }
+
     try {
       const result = await updateCommissionStatus(
         commissionId,
@@ -169,7 +190,9 @@ export default function CommissionsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white">Comissões</h1>
-            <p className="text-slate-400 mt-1">Gerenciar comissões do mês</p>
+            <p className="text-slate-400 mt-1">
+              {isAdmin ? 'Gerenciar todas as comissões do mês' : 'Visualizar suas comissões do mês'}
+            </p>
           </div>
         </div>
 
@@ -294,8 +317,8 @@ export default function CommissionsPage() {
           <h2 className="text-xl font-bold text-white mb-4">Detalhes das Comissões</h2>
           <CommissionTable
             commissions={commissions}
-            isLoading={loading}
-            onStatusChange={handleStatusChange}
+            isLoading={loading || permLoading}
+            onStatusChange={canManageCommissions ? handleStatusChange : undefined}
           />
         </Card>
       </div>

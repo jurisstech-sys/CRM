@@ -138,7 +138,7 @@ export function CommissionTable({ commissions, isLoading = false, onStatusChange
               <TableHead className="text-right text-slate-300">Comissão</TableHead>
               <TableHead className="text-slate-300">Status</TableHead>
               <TableHead className="text-slate-300">Data</TableHead>
-              <TableHead className="text-slate-300">Ações</TableHead>
+              {onStatusChange && <TableHead className="text-slate-300">Ações</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -178,18 +178,20 @@ export function CommissionTable({ commissions, isLoading = false, onStatusChange
                     locale: pt,
                   })}
                 </TableCell>
-                <TableCell>
-                  {commission.status !== 'paid' && commission.status !== 'cancelled' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-slate-600 text-xs"
-                      onClick={() => handleStatusClick(commission.id, commission.status)}
-                    >
-                      Avançar
-                    </Button>
-                  )}
-                </TableCell>
+                {onStatusChange && (
+                  <TableCell>
+                    {commission.status !== 'paid' && commission.status !== 'cancelled' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-slate-600 text-xs"
+                        onClick={() => handleStatusClick(commission.id, commission.status)}
+                      >
+                        Avançar
+                      </Button>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

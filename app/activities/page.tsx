@@ -14,6 +14,7 @@ import {
 import { Card } from '@/components/ui/card'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { fetchActivityLogs, ActivityLog, ActionType, EntityType } from '@/lib/activities'
+import { usePermissions } from '@/hooks/usePermissions'
 
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityLog[]>([])
@@ -21,10 +22,14 @@ export default function ActivitiesPage() {
   const [filterType, setFilterType] = useState<ActionType | 'all'>('all')
   const [filterEntity, setFilterEntity] = useState<EntityType | 'all'>('all')
 
+  const { isAdmin, userId, loading: permLoading } = usePermissions()
+
   useEffect(() => {
-    loadActivities()
+    if (!permLoading && userId) {
+      loadActivities()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, filterEntity])
+  }, [filterType, filterEntity, permLoading, userId, isAdmin])
 
   const loadActivities = async () => {
     try {
@@ -38,6 +43,11 @@ export default function ActivitiesPage() {
 
       if (filterEntity !== 'all') {
         filters.entityType = filterEntity
+      }
+
+      // Comercial users only see their own activities
+      if (!isAdmin && userId) {
+        filters.userId = userId
       }
 
       filters.limit = 100
@@ -63,7 +73,9 @@ export default function ActivitiesPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Atividades</h1>
             <p className="text-muted-foreground mt-2">
-              Timeline de todas as ações realizadas no sistema
+              {isAdmin
+                ? 'Timeline de todas as ações realizadas no sistema'
+                : 'Timeline das suas ações realizadas no sistema'}
             </p>
           </div>
           <Button onClick={handleRefresh} variant="outline" className="gap-2">
@@ -110,7 +122,7 @@ export default function ActivitiesPage() {
         </Card>
 
         {/* Activity Feed */}
-        {loading ? (
+        {loading || permLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>

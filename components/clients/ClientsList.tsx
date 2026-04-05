@@ -29,6 +29,7 @@ import { ClientData } from './ClientForm'
 export interface Client extends ClientData {
   id: string
   created_at: string
+  created_by?: string
 }
 
 interface ClientsListProps {
@@ -36,6 +37,8 @@ interface ClientsListProps {
   onEdit: (client: Client) => void
   onDelete: (id: string) => Promise<void>
   isLoading?: boolean
+  canEdit?: boolean
+  canDeleteRecords?: boolean
 }
 
 const statusColors = {
@@ -55,6 +58,8 @@ export function ClientsList({
   onEdit,
   onDelete,
   isLoading = false,
+  canEdit = true,
+  canDeleteRecords = true,
 }: ClientsListProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
@@ -85,7 +90,9 @@ export function ClientsList({
               <TableHead>Tipo</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Data Criação</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
+              {(canEdit || canDeleteRecords) && (
+                <TableHead className="text-right">Ações</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -109,26 +116,32 @@ export function ClientsList({
                     locale: pt,
                   })}
                 </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEdit(client)}
-                      disabled={isLoading}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDeleteId(client.id)}
-                      disabled={isLoading}
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {(canEdit || canDeleteRecords) && (
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEdit(client)}
+                          disabled={isLoading}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {canDeleteRecords && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteId(client.id)}
+                          disabled={isLoading}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

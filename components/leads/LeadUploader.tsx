@@ -16,7 +16,7 @@ export interface Lead {
   email1?: string;
   email2?: string;
   email3?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface LeadUploaderProps {
@@ -24,20 +24,71 @@ interface LeadUploaderProps {
   isLoading?: boolean;
 }
 
+/**
+ * Normaliza os nomes das colunas do arquivo para o formato esperado.
+ * Aceita variações como: NOME, Nome, nome, E-MAIL1, email1, E-mail1 etc.
+ */
+function normalizeColumnName(col: string): string {
+  const cleaned = col
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[-_\s]+/g, '')         // remove hifens, underscores, espaços
+    .replace(/^email/, 'email')      // normaliza e-mail -> email
+    .replace(/^celular/, 'celular');
+
+  // Mapeamento de nomes comuns para o formato esperado
+  const mapping: Record<string, string> = {
+    'nome': 'nome',
+    'nomes': 'nome',
+    'name': 'nome',
+    'fullname': 'nome',
+    'nomecompleto': 'nome',
+    'celular1': 'celular1',
+    'celular2': 'celular2',
+    'telefone1': 'celular1',
+    'telefone2': 'celular2',
+    'tel1': 'celular1',
+    'tel2': 'celular2',
+    'phone1': 'celular1',
+    'phone2': 'celular2',
+    'email1': 'email1',
+    'email2': 'email2',
+    'email3': 'email3',
+  };
+
+  return mapping[cleaned] || cleaned;
+}
+
+/**
+ * Normaliza um objeto de row do arquivo, mapeando colunas para o formato esperado.
+ */
+function normalizeRow(row: Record<string, unknown>): Lead {
+  const normalized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(row)) {
+    const normalizedKey = normalizeColumnName(key);
+    // Se já existe o campo, não sobrescreve (prioriza a primeira coluna encontrada)
+    if (!normalized[normalizedKey] && value !== null && value !== undefined && String(value).trim() !== '') {
+      normalized[normalizedKey] = String(value).trim();
+    }
+  }
+
+  return {
+    nome: String(normalized.nome || '').trim(),
+    celular1: String(normalized.celular1 || '').trim(),
+    celular2: String(normalized.celular2 || '').trim(),
+    email1: String(normalized.email1 || '').trim(),
+    email2: String(normalized.email2 || '').trim(),
+    email3: String(normalized.email3 || '').trim(),
+  };
+}
+
 export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderProps) => {
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [parseError, setParseError] = useState<string>('');
-
-  const ACCEPTED_COLUMNS = ['nome', 'celular1', 'celular2', 'email1', 'email2', 'email3'];
-
-  const validateColumns = (headers: string[]): { valid: boolean; missing: string[] } => {
-    // Apenas aceita as colunas esperadas, sem obrigatoriedade
-    return {
-      valid: true,
-      missing: [],
-    };
-  };
 
   const parseCSV = (file: File, text: string): Promise<Lead[]> => {
     return new Promise((resolve, reject) => {
@@ -52,28 +103,14 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
             return;
           }
 
-          const headers = Object.keys(results.data[0] || {});
-          const validation = validateColumns(headers);
+          const leads: Lead[] = (results.data as Record<string, string>[])
+            .map(row => normalizeRow(row))
+            .filter(lead => lead.nome && lead.nome.length > 0);
 
-          if (!validation.valid) {
-            reject(
-              new Error(
-                `Colunas obrigatórias faltando: ${validation.missing.join(', ')}`
-              )
-            );
+          if (leads.length === 0) {
+            reject(new Error('Nenhum lead com nome encontrado no arquivo. Verifique se a coluna NOME existe.'));
             return;
           }
-
-          const leads: Lead[] = (results.data as Record<string, string>[])
-            .filter(row => row.nome) // Apenas filtra linhas sem NOME
-            .map(row => ({
-              nome: String(row.nome || '').trim(),
-              celular1: String(row.celular1 || '').trim(),
-              celular2: String(row.celular2 || '').trim(),
-              email1: String(row.email1 || '').trim(),
-              email2: String(row.email2 || '').trim(),
-              email3: String(row.email3 || '').trim(),
-            }));
 
           resolve(leads);
         },
@@ -85,7 +122,7 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
     });
   };
 
-  const parseExcel = (file: File, arrayBuffer: ArrayBuffer): Promise<Lead[]> => {
+  const parseExcel = (_file: File, arrayBuffer: ArrayBuffer): Promise<Lead[]> => {
     return new Promise((resolve, reject) => {
       try {
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
@@ -103,28 +140,20 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
           return;
         }
 
-        const headers = Object.keys(data[0] || {});
-        const validation = validateColumns(headers);
+        console.log('[LeadUploader] Colunas encontradas no Excel:', Object.keys(data[0] as object));
+        console.log('[LeadUploader] Primeira linha raw:', data[0]);
 
-        if (!validation.valid) {
-          reject(
-            new Error(
-              `Colunas obrigatórias faltando: ${validation.missing.join(', ')}`
-            )
-          );
+        const leads: Lead[] = (data as Record<string, unknown>[])
+          .map(row => normalizeRow(row))
+          .filter(lead => lead.nome && lead.nome.length > 0);
+
+        console.log('[LeadUploader] Leads parseados:', leads.length);
+        console.log('[LeadUploader] Primeiro lead normalizado:', leads[0]);
+
+        if (leads.length === 0) {
+          reject(new Error('Nenhum lead com nome encontrado no arquivo. Verifique se a coluna NOME existe.'));
           return;
         }
-
-        const leads: Lead[] = (data as any[])
-          .filter(row => row.nome) // Apenas filtra linhas sem NOME
-          .map(row => ({
-            nome: String(row.nome || '').trim(),
-            celular1: String(row.celular1 || '').trim(),
-            celular2: String(row.celular2 || '').trim(),
-            email1: String(row.email1 || '').trim(),
-            email2: String(row.email2 || '').trim(),
-            email3: String(row.email3 || '').trim(),
-          }));
 
         resolve(leads);
       } catch (error) {
@@ -152,6 +181,14 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
 
     if (!isCSV && !isExcel) {
       const error = 'Por favor, selecione um arquivo CSV ou Excel';
+      setParseError(error);
+      toast.error(error);
+      return;
+    }
+
+    // Verificar tamanho do arquivo (máximo 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      const error = 'Arquivo muito grande. Máximo permitido: 50MB';
       setParseError(error);
       toast.error(error);
       return;
@@ -236,7 +273,7 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
               Arraste seu arquivo aqui ou clique para selecionar
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Aceita CSV ou Excel (XLSX, XLS)
+              Aceita CSV ou Excel (XLSX, XLS) — máximo 50MB
             </p>
           </div>
         </label>
@@ -262,7 +299,8 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
             </p>
             <p className="text-sm text-red-700 dark:text-red-300 mt-1">{parseError}</p>
             <p className="text-xs text-red-600 dark:text-red-400 mt-2">
-              ℹ️ Certifique-se que seu arquivo contém as colunas: <span className="font-semibold">NOME, CELULAR1, CELULAR2, E-MAIL1, E-MAIL2, E-MAIL3</span>
+              ℹ️ Certifique-se que seu arquivo contém a coluna: <span className="font-semibold">NOME</span> (obrigatório).
+              Colunas opcionais: CELULAR1, CELULAR2, E-MAIL1, E-MAIL2, E-MAIL3
             </p>
           </div>
         </div>
@@ -274,13 +312,16 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
           📋 Colunas esperadas no arquivo:
         </h4>
         <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-          <li>• <span className="font-mono">NOME</span> - Nome do lead (obrigatório para criar linha)</li>
+          <li>• <span className="font-mono">NOME</span> - Nome do lead <span className="text-red-500 font-bold">(obrigatório)</span></li>
           <li>• <span className="font-mono">CELULAR1</span> - Telefone celular 1 (opcional)</li>
           <li>• <span className="font-mono">CELULAR2</span> - Telefone celular 2 (opcional)</li>
           <li>• <span className="font-mono">E-MAIL1</span> - Email 1 (opcional)</li>
           <li>• <span className="font-mono">E-MAIL2</span> - Email 2 (opcional)</li>
           <li>• <span className="font-mono">E-MAIL3</span> - Email 3 (opcional)</li>
         </ul>
+        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+          💡 O sistema aceita variações como E-MAIL1, email1, Email1, etc.
+        </p>
       </div>
     </div>
   );

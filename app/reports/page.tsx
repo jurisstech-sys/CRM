@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Client {
   id: string;
@@ -56,6 +57,8 @@ export default function ReportsPage() {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generatingExcel, setGeneratingExcel] = useState(false);
 
+  const { isAdmin, canViewFullReports, userId, loading: permLoading } = usePermissions();
+
   // Initialize dates (last 30 days)
   useEffect(() => {
     const end = new Date();
@@ -64,8 +67,11 @@ export default function ReportsPage() {
     setStartDate(start.toISOString().split('T')[0]);
     setEndDate(end.toISOString().split('T')[0]);
     
-    fetchInitialData();
-  }, []);
+    if (!permLoading) {
+      fetchInitialData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permLoading]);
 
   // Fetch sellers from users table
   const fetchInitialData = async () => {
@@ -95,11 +101,14 @@ export default function ReportsPage() {
     try {
       setLoading(true);
 
-      // Fetch clients
+      // Fetch clients - filtered by role
       let clientsQuery = supabase
         .from('clients')
         .select('id, name, email, phone, created_at');
 
+      if (!isAdmin && userId) {
+        clientsQuery = clientsQuery.eq('created_by', userId);
+      }
       if (startDate) {
         clientsQuery = clientsQuery.gte('created_at', startDate);
       }
@@ -110,11 +119,14 @@ export default function ReportsPage() {
       const { data: clientsData } = await clientsQuery;
       setClients(clientsData || []);
 
-      // Fetch leads
+      // Fetch leads - filtered by role
       let leadsQuery = supabase
         .from('leads')
         .select('id, title, client_name, value, status, expected_close_date, created_at');
 
+      if (!isAdmin && userId) {
+        leadsQuery = leadsQuery.eq('created_by', userId);
+      }
       if (selectedClient) {
         leadsQuery = leadsQuery.eq('client_name', selectedClient);
       }
@@ -128,7 +140,7 @@ export default function ReportsPage() {
       const { data: leadsData } = await leadsQuery;
       setLeads(leadsData || []);
 
-      // Fetch commissions
+      // Fetch commissions - filtered by role
       let commissionsQuery = supabase
         .from('commissions')
         .select(`
@@ -142,7 +154,10 @@ export default function ReportsPage() {
           created_at
         `);
 
-      if (selectedSeller) {
+      if (!isAdmin && userId) {
+        commissionsQuery = commissionsQuery.eq('user_id', userId);
+      }
+      if (selectedSeller && canViewFullReports) {
         commissionsQuery = commissionsQuery.eq('seller_id', selectedSeller);
       }
       if (startDate) {
@@ -265,7 +280,11 @@ export default function ReportsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Relatórios</h1>
-          <p className="text-gray-400 mt-2">Gere relatórios em PDF e Excel com os dados filtrados</p>
+          <p className="text-gray-400 mt-2">
+            {canViewFullReports
+              ? 'Gere relatórios completos em PDF e Excel com os dados filtrados'
+              : 'Gere relatórios dos seus dados em PDF e Excel'}
+          </p>
         </div>
 
         {/* Filters Section */}
@@ -306,22 +325,25 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Vendedor</label>
-              <Select value={selectedSeller} onValueChange={setSelectedSeller}>
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
-                  {sellers.map(seller => (
-                    <SelectItem key={seller.id} value={seller.id}>
-                      {seller.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Seller filter only visible to admins */}
+            {canViewFullReports && (
+              <div>
+                <label className="text-sm font-medium">Vendedor</label>
+                <Select value={selectedSeller} onValueChange={setSelectedSeller}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos</SelectItem>
+                    {sellers.map(seller => (
+                      <SelectItem key={seller.id} value={seller.id}>
+                        {seller.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div className="mt-4 flex gap-2">
             <Button

@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card } from '@/components/ui/card';
 import { Upload, Trash2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 interface LeadPreviewData extends Lead {
   _rowIndex: number;
@@ -36,9 +37,29 @@ export default function LeadsPage() {
     toast.success('Lead removido da pré-visualização');
   };
 
+  const getAccessToken = async (): Promise<string | null> => {
+    if (!supabase) {
+      toast.error('Supabase não configurado. Verifique as variáveis de ambiente.');
+      return null;
+    }
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session) {
+      toast.error('Sessão expirada. Faça login novamente.');
+      console.error('[LeadsPage] Erro ao obter sessão:', error?.message);
+      return null;
+    }
+    return session.access_token;
+  };
+
   const handleImport = async () => {
     if (leads.length === 0) {
       toast.error('Nenhum lead para importar. Carregue um arquivo primeiro.');
+      return;
+    }
+
+    // Obter token de autenticação
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
       return;
     }
 
@@ -47,20 +68,24 @@ export default function LeadsPage() {
     setImportedCount(0);
 
     try {
-      // Importa em lotes de até 1000 leads
-      const batchSize = 1000;
+      // Importa em lotes de até 2000 leads
+      const batchSize = 2000;
       let totalImported = 0;
 
       for (let i = 0; i < leads.length; i += batchSize) {
         const batch = leads.slice(i, Math.min(i + batchSize, leads.length));
         
         // Remove a propriedade _rowIndex antes de enviar
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const cleanedBatch = batch.map(({ _rowIndex, ...lead }) => lead);
+
+        console.log(`[LeadsPage] Enviando batch ${Math.floor(i / batchSize) + 1}: ${cleanedBatch.length} leads`);
 
         const response = await fetch('/api/leads/import', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
             leads: cleanedBatch,
@@ -68,19 +93,22 @@ export default function LeadsPage() {
           }),
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Erro ao importar leads');
+          console.error('[LeadsPage] Erro na resposta:', data);
+          throw new Error(data.error || 'Erro ao importar leads');
         }
 
-        const data = await response.json();
         totalImported += data.count;
         setImportedCount(totalImported);
         setImportProgress(Math.min(((i + batch.length) / leads.length) * 100, 100));
 
+        console.log(`[LeadsPage] Batch importado: ${data.count} leads. Total: ${totalImported}`);
+
         // Pequeno delay entre batches para evitar sobrecarga
         if (i + batchSize < leads.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
 
@@ -99,7 +127,7 @@ export default function LeadsPage() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       toast.error(`❌ Erro ao importar: ${errorMessage}`);
-      console.error('Import error:', error);
+      console.error('[LeadsPage] Import error:', error);
     } finally {
       setIsImporting(false);
     }

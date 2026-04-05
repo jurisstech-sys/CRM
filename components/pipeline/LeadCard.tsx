@@ -118,14 +118,16 @@ export function LeadCard({ lead, onDelete, onUpdate }: LeadCardProps) {
               >
                 <Edit2 className="w-3 h-3" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0 hover:bg-red-900 hover:text-red-200"
-                onClick={handleDelete}
-              >
-                <X className="w-3 h-3" />
-              </Button>
+              {onDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 hover:bg-red-900 hover:text-red-200"
+                  onClick={handleDelete}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              )}
             </div>
           </div>
 
