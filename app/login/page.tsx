@@ -1,29 +1,72 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
 export default function Login() {
   const [isClient, setIsClient] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
     setIsClient(true)
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!email || !password) {
-      setError('Por favor, preenchê todos os campos')
+      setError('Por favor, preencha todos os campos')
+      return
+    }
+    
+    // Validação básica de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      setError('Por favor, insira um email válido')
       return
     }
     
     setError('')
-    // Simulação de login (será integrado com autenticação real depois)
-    console.log('Tentativa de login com:', { email, password })
+    setIsLoading(true)
+
+    try {
+      // Tenta fazer login com Supabase
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      })
+
+      if (authError) {
+        // Mensagens de erro mais amigáveis
+        if (authError.message.includes('Invalid login credentials')) {
+          setError('Email ou senha incorretos')
+        } else if (authError.message.includes('Email not confirmed')) {
+          setError('Por favor, confirme seu email antes de fazer login')
+        } else {
+          setError(authError.message || 'Erro ao fazer login. Tente novamente.')
+        }
+        return
+      }
+
+      if (data?.session) {
+        // Login bem-sucedido, redireciona para dashboard
+        console.log('✅ Login realizado com sucesso:', data.user?.email)
+        router.push('/dashboard')
+      } else {
+        setError('Erro ao criar sessão. Tente novamente.')
+      }
+    } catch (err) {
+      console.error('❌ Erro durante login:', err)
+      setError('Erro inesperado. Por favor, tente novamente.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   if (!isClient) {
@@ -80,9 +123,10 @@ export default function Login() {
 
             <button
               type="submit"
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors mt-6"
+              disabled={isLoading}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg font-semibold transition-colors mt-6"
             >
-              Entrar
+              {isLoading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
 
