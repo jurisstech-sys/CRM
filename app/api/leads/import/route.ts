@@ -19,7 +19,6 @@ interface ImportRequestBody {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request: NextRequest) {
   try {
@@ -127,17 +126,13 @@ export async function POST(request: NextRequest) {
     let totalInserted = 0;
     const errors: string[] = [];
 
-    // Use service role key to bypass RLS for all inserts
-    const serviceClient = supabaseServiceKey
-      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
-      : supabase;
-
+    // Use the user's authenticated client for all inserts
     // Try to insert into imported_leads (may not exist — that's OK)
     for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
       const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
       console.log(`[Leads Import] Inserindo batch imported_leads ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} leads...`);
 
-      const { data, error } = await serviceClient
+      const { data, error } = await supabase
         .from('imported_leads')
         .insert(batch)
         .select('id');
@@ -157,14 +152,13 @@ export async function POST(request: NextRequest) {
 
     // ============================================================
     // ALSO insert into 'leads' table so they appear in the Pipeline
-    // Uses service role key to bypass RLS and FK constraints
     // ============================================================
     let totalPipelineInserted = 0;
     const pipelineErrors: string[] = [];
 
     // First, ensure the user exists in the 'users' table (FK constraint on created_by)
     // Check if user exists in users table; if not, create a minimal record
-    const { data: existingUser } = await serviceClient
+    const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('id', user.id)
@@ -172,7 +166,7 @@ export async function POST(request: NextRequest) {
 
     if (!existingUser) {
       console.log('[Leads Import] Usuário não encontrado na tabela users, criando registro...');
-      const { error: createUserError } = await serviceClient
+      const { error: createUserError } = await supabase
         .from('users')
         .insert({
           id: user.id,
@@ -205,7 +199,7 @@ export async function POST(request: NextRequest) {
       const batch = pipelineLeads.slice(i, i + BATCH_SIZE);
       console.log(`[Leads Import] Inserindo batch pipeline ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} leads...`);
 
-      const { data: pData, error: pError } = await serviceClient
+      const { data: pData, error: pError } = await supabase
         .from('leads')
         .insert(batch)
         .select('id');
