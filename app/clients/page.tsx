@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Plus, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { logActivity } from '@/lib/activities'
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -54,20 +55,42 @@ export default function ClientsPage() {
           .eq('id', editingClient.id)
 
         if (error) throw error
+        
+        // Log the activity
+        await logActivity(
+          'update',
+          'client',
+          editingClient.id,
+          `Cliente "${formData.name}" foi atualizado`,
+          formData.name
+        )
+        
         toast.success('Cliente atualizado com sucesso')
         setEditingClient(null)
       } else {
         // Create new client
-        const { error } = await supabase.from('clients').insert([
+        const { data, error } = await supabase.from('clients').insert([
           {
             ...formData,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             created_by: 'system', // TODO: Use actual user ID
           },
-        ])
+        ]).select()
 
         if (error) throw error
+        
+        // Log the activity
+        if (data && data.length > 0) {
+          await logActivity(
+            'create',
+            'client',
+            data[0].id,
+            `Novo cliente "${formData.name}" foi criado`,
+            formData.name
+          )
+        }
+        
         toast.success('Cliente criado com sucesso')
       }
 
@@ -88,9 +111,22 @@ export default function ClientsPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      // Get client name before deletion for logging
+      const clientToDelete = clients.find(c => c.id === id)
+      const clientName = clientToDelete?.name || 'Cliente desconhecido'
+
       const { error } = await supabase.from('clients').delete().eq('id', id)
 
       if (error) throw error
+
+      // Log the activity
+      await logActivity(
+        'delete',
+        'client',
+        id,
+        `Cliente "${clientName}" foi deletado`,
+        clientName
+      )
 
       toast.success('Cliente deletado com sucesso')
       await loadClients()

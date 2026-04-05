@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { logActivity } from '@/lib/activities'
 
 export default function ClientDetailPage() {
   const router = useRouter()
@@ -64,6 +65,15 @@ export default function ClientDetailPage() {
         .eq('id', clientId)
 
       if (error) throw error
+
+      // Log the activity
+      await logActivity(
+        'update',
+        'client',
+        clientId,
+        `Cliente "${formData.name}" foi atualizado`,
+        formData.name
+      )
 
       toast.success('Cliente atualizado com sucesso')
       setFormOpen(false)

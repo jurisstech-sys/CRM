@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { createCommissionOnWin } from '@/lib/commissions'
+import { logActivity } from '@/lib/activities'
 import KanbanColumn from './KanbanColumn'
 
 interface KanbanBoardProps {
@@ -175,6 +176,19 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
         return
       }
 
+      // Log the activity
+      const oldStatusTitle = PIPELINE_STAGES.find((s) => s.id === oldStatus)?.title || oldStatus
+      const newStatusTitle = PIPELINE_STAGES.find((s) => s.id === newStatus)?.title || newStatus
+      await logActivity(
+        'move',
+        'lead',
+        draggedLeadId,
+        `Lead "${draggedLead.title}" foi movido de "${oldStatusTitle}" para "${newStatusTitle}"`,
+        draggedLead.title,
+        oldStatusTitle,
+        newStatusTitle
+      )
+
       // Create commission if moving to 'won' status
       if (newStatus === 'won' && draggedLead.assigned_to && draggedLead.value) {
         const commission = await createCommissionOnWin(
@@ -206,12 +220,32 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
   const handleDeleteLead = async (leadId: string) => {
     try {
       setUpdatingId(leadId)
+      
+      // Find lead before deletion for logging
+      let leadTitle = 'Lead desconhecido'
+      for (const [, statusLeads] of Object.entries(leads)) {
+        const found = statusLeads.find((l) => l.id === leadId)
+        if (found) {
+          leadTitle = found.title
+          break
+        }
+      }
+
       const { error } = await supabase
         .from('leads')
         .delete()
         .eq('id', leadId)
 
       if (error) throw error
+
+      // Log the activity
+      await logActivity(
+        'delete',
+        'lead',
+        leadId,
+        `Lead "${leadTitle}" foi deletado`,
+        leadTitle
+      )
 
       // Remove from local state
       const newLeads = { ...leads }
@@ -232,6 +266,17 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
   const handleUpdateLead = async (updatedLead: Lead) => {
     try {
       setUpdatingId(updatedLead.id)
+      
+      // Find original lead for comparison
+      let originalLead: Lead | null = null
+      for (const [, statusLeads] of Object.entries(leads)) {
+        const found = statusLeads.find((l) => l.id === updatedLead.id)
+        if (found) {
+          originalLead = found
+          break
+        }
+      }
+
       const { error } = await supabase
         .from('leads')
         .update({
@@ -245,6 +290,26 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
         .eq('id', updatedLead.id)
 
       if (error) throw error
+
+      // Log the activity
+      const changes = []
+      if (originalLead?.title !== updatedLead.title) {
+        changes.push(`título: "${originalLead?.title}" → "${updatedLead.title}"`)
+      }
+      if (originalLead?.value !== updatedLead.value) {
+        changes.push(`valor: R$ ${originalLead?.value} → R$ ${updatedLead.value}`)
+      }
+      if (originalLead?.probability !== updatedLead.probability) {
+        changes.push(`probabilidade: ${originalLead?.probability}% → ${updatedLead.probability}%`)
+      }
+
+      await logActivity(
+        'update',
+        'lead',
+        updatedLead.id,
+        `Lead "${updatedLead.title}" foi atualizado${changes.length > 0 ? ': ' + changes.join(', ') : ''}`,
+        updatedLead.title
+      )
 
       // Update local state
       const newLeads = { ...leads }

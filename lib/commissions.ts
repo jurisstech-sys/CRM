@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase'
+import { logActivity } from './activities'
 
 export interface CommissionData {
   id?: string
@@ -110,6 +111,17 @@ export async function createCommissionOnWin(
 
     // Update user's monthly commission total
     await updateUserMonthlyCommission(userId)
+
+    // Log the activity
+    if (commissionData) {
+      await logActivity(
+        'create',
+        'commission',
+        commissionData.id || leadId,
+        `Comissão de R$ ${commissionAmount.toFixed(2)} foi criada para o lead ${leadId}`,
+        `Comissão ${(userCommissionRate * 100).toFixed(1)}%`
+      )
+    }
 
     return commissionData || null
   } catch (error) {
