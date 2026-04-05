@@ -10,11 +10,12 @@ type PapaParseModule = any;
 const Papa = require('papaparse') as PapaParseModule;
 
 export interface Lead {
-  nome: string;
-  email: string;
-  telefone: string;
-  valor: number | string;
-  fonte: string;
+  nome?: string;
+  celular1?: string;
+  celular2?: string;
+  email1?: string;
+  email2?: string;
+  email3?: string;
   [key: string]: any;
 }
 
@@ -28,17 +29,13 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [parseError, setParseError] = useState<string>('');
 
-  const REQUIRED_COLUMNS = ['nome', 'email', 'telefone', 'valor', 'fonte'];
+  const ACCEPTED_COLUMNS = ['nome', 'celular1', 'celular2', 'email1', 'email2', 'email3'];
 
   const validateColumns = (headers: string[]): { valid: boolean; missing: string[] } => {
-    const normalizedHeaders = headers.map(h => h.toLowerCase().trim());
-    const missingColumns = REQUIRED_COLUMNS.filter(
-      col => !normalizedHeaders.includes(col)
-    );
-
+    // Apenas aceita as colunas esperadas, sem obrigatoriedade
     return {
-      valid: missingColumns.length === 0,
-      missing: missingColumns,
+      valid: true,
+      missing: [],
     };
   };
 
@@ -68,13 +65,14 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
           }
 
           const leads: Lead[] = (results.data as Record<string, string>[])
-            .filter(row => row.nome && row.email) // Filtra linhas vazias
+            .filter(row => row.nome) // Apenas filtra linhas sem NOME
             .map(row => ({
               nome: String(row.nome || '').trim(),
-              email: String(row.email || '').trim(),
-              telefone: String(row.telefone || '').trim(),
-              valor: parseFloat(String(row.valor || '0').replace(/[^\d.-]/g, '')) || 0,
-              fonte: String(row.fonte || '').trim(),
+              celular1: String(row.celular1 || '').trim(),
+              celular2: String(row.celular2 || '').trim(),
+              email1: String(row.email1 || '').trim(),
+              email2: String(row.email2 || '').trim(),
+              email3: String(row.email3 || '').trim(),
             }));
 
           resolve(leads);
@@ -118,13 +116,14 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
         }
 
         const leads: Lead[] = (data as any[])
-          .filter(row => row.nome && row.email)
+          .filter(row => row.nome) // Apenas filtra linhas sem NOME
           .map(row => ({
             nome: String(row.nome || '').trim(),
-            email: String(row.email || '').trim(),
-            telefone: String(row.telefone || '').trim(),
-            valor: parseFloat(String(row.valor || '0').replace(/[^\d.-]/g, '')) || 0,
-            fonte: String(row.fonte || '').trim(),
+            celular1: String(row.celular1 || '').trim(),
+            celular2: String(row.celular2 || '').trim(),
+            email1: String(row.email1 || '').trim(),
+            email2: String(row.email2 || '').trim(),
+            email3: String(row.email3 || '').trim(),
           }));
 
         resolve(leads);
@@ -263,7 +262,7 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
             </p>
             <p className="text-sm text-red-700 dark:text-red-300 mt-1">{parseError}</p>
             <p className="text-xs text-red-600 dark:text-red-400 mt-2">
-              ℹ️ Certifique-se que seu arquivo contém as colunas: <span className="font-semibold">nome, email, telefone, valor, fonte</span>
+              ℹ️ Certifique-se que seu arquivo contém as colunas: <span className="font-semibold">NOME, CELULAR1, CELULAR2, E-MAIL1, E-MAIL2, E-MAIL3</span>
             </p>
           </div>
         </div>
@@ -275,11 +274,12 @@ export const LeadUploader = ({ onDataParsed, isLoading = false }: LeadUploaderPr
           📋 Colunas esperadas no arquivo:
         </h4>
         <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-          <li>• <span className="font-mono">nome</span> - Nome do lead (obrigatório)</li>
-          <li>• <span className="font-mono">email</span> - Email (obrigatório)</li>
-          <li>• <span className="font-mono">telefone</span> - Telefone</li>
-          <li>• <span className="font-mono">valor</span> - Valor do negócio</li>
-          <li>• <span className="font-mono">fonte</span> - Origem do lead</li>
+          <li>• <span className="font-mono">NOME</span> - Nome do lead (obrigatório para criar linha)</li>
+          <li>• <span className="font-mono">CELULAR1</span> - Telefone celular 1 (opcional)</li>
+          <li>• <span className="font-mono">CELULAR2</span> - Telefone celular 2 (opcional)</li>
+          <li>• <span className="font-mono">E-MAIL1</span> - Email 1 (opcional)</li>
+          <li>• <span className="font-mono">E-MAIL2</span> - Email 2 (opcional)</li>
+          <li>• <span className="font-mono">E-MAIL3</span> - Email 3 (opcional)</li>
         </ul>
       </div>
     </div>

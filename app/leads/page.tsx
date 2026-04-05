@@ -150,10 +150,11 @@ export default function LeadsPage() {
                   <TableRow>
                     <TableHead className="w-[30px]">#</TableHead>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Fonte</TableHead>
+                    <TableHead>Celular 1</TableHead>
+                    <TableHead>Celular 2</TableHead>
+                    <TableHead>Email 1</TableHead>
+                    <TableHead>Email 2</TableHead>
+                    <TableHead>Email 3</TableHead>
                     <TableHead className="w-[60px]">Ação</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -162,24 +163,22 @@ export default function LeadsPage() {
                     <TableRow key={lead._rowIndex}>
                       <TableCell className="text-xs text-gray-500">{idx + 1}</TableCell>
                       <TableCell className="font-medium text-gray-900 dark:text-white">
-                        {lead.nome}
+                        {lead.nome || '-'}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-                        {lead.email}
+                        {lead.celular1 || '-'}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-                        {lead.telefone || '-'}
-                      </TableCell>
-                      <TableCell className="text-sm font-medium text-gray-900 dark:text-white">
-                        {typeof lead.valor === 'number' && lead.valor > 0
-                          ? `R$ ${lead.valor.toLocaleString('pt-BR', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}`
-                          : '-'}
+                        {lead.celular2 || '-'}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-                        {lead.fonte || '-'}
+                        {lead.email1 || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600 dark:text-gray-400">
+                        {lead.email2 || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600 dark:text-gray-400">
+                        {lead.email3 || '-'}
                       </TableCell>
                       <TableCell>
                         <button

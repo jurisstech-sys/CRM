@@ -3,11 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 
 // Tipo de lead recebido da requisição
 interface IncomingLead {
-  nome: string;
-  email: string;
-  telefone: string;
-  valor: number | string;
-  fonte: string;
+  nome?: string;
+  celular1?: string;
+  celular2?: string;
+  email1?: string;
+  email2?: string;
+  email3?: string;
   [key: string]: any;
 }
 
@@ -54,22 +55,23 @@ export async function POST(request: NextRequest) {
     // Preparar dados para inserção
     const leadsToInsert = leads
       .filter(lead => {
-        // Validar campos obrigatórios
-        return lead.nome && lead.email;
+        // Apenas validar se tem NOME (obrigatório)
+        return lead.nome;
       })
       .map(lead => ({
         nome: String(lead.nome || '').trim(),
-        email: String(lead.email || '').trim(),
-        telefone: String(lead.telefone || '').trim(),
-        valor: parseFloat(String(lead.valor || '0').replace(/[^\d.-]/g, '')) || 0,
-        fonte: String(lead.fonte || '').trim(),
+        celular1: String(lead.celular1 || '').trim(),
+        celular2: String(lead.celular2 || '').trim(),
+        email1: String(lead.email1 || '').trim(),
+        email2: String(lead.email2 || '').trim(),
+        email3: String(lead.email3 || '').trim(),
         status: 'novo', // Status padrão
         criado_em: new Date().toISOString(),
         arquivo_origem: fileName || 'importacao',
         // Adicionar qualquer outro campo que venha no lead
         ...Object.fromEntries(
           Object.entries(lead)
-            .filter(([key]) => !['nome', 'email', 'telefone', 'valor', 'fonte'].includes(key))
+            .filter(([key]) => !['nome', 'celular1', 'celular2', 'email1', 'email2', 'email3'].includes(key))
             .map(([key, value]) => [key, value])
         ),
       }));
