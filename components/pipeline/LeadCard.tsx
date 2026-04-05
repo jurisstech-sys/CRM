@@ -136,6 +136,15 @@ export function LeadCard({ lead, onDelete, onUpdate }: LeadCardProps) {
             <p className="text-xs text-slate-400">{lead.client_name}</p>
           )}
 
+          {/* Contact info from description */}
+          {lead.description && (lead.description.includes('📱') || lead.description.includes('📧')) && (
+            <div className="text-xs text-slate-400 space-y-0.5">
+              {lead.description.split(' | ').map((part, i) => (
+                <p key={i} className="truncate">{part}</p>
+              ))}
+            </div>
+          )}
+
           {/* Value and probability */}
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">Valor:</span>

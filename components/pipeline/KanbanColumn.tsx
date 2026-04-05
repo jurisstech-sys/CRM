@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { LeadCard, Lead } from './LeadCard'
 
@@ -25,7 +26,7 @@ function DroppableColumn({
   onUpdateLead,
   isUpdating,
 }: KanbanColumnProps) {
-  const { setNodeRef, isOver } = useSortable({
+  const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
     data: {
       type: 'Column',

@@ -157,10 +157,10 @@ export async function POST(request: NextRequest) {
     console.log(`[Leads Import] Total inserido em imported_leads: ${totalInserted}/${leadsToInsert.length}`);
 
     // ============================================================
-    // ALSO insert into 'leads' table so they appear in the Pipeline
+    // AUTO-CREATE CLIENTS from imported leads
     // ============================================================
-    let totalPipelineInserted = 0;
-    const pipelineErrors: string[] = [];
+    let totalClientsCreated = 0;
+    const clientIdMap: Record<string, string> = {}; // nome -> client_id
 
     // First, ensure the user exists in the 'users' table (FK constraint on created_by)
     // Check if user exists in users table; if not, create a minimal record
@@ -189,17 +189,70 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pipelineLeads = leadsToInsert.map(lead => ({
-      title: lead.nome,
-      description: `Importado de: ${lead.arquivo_origem}. Celular: ${lead.celular1 || '-'} | Email: ${lead.email1 || '-'}`,
-      source: 'importacao',
-      value: 0,
-      currency: 'BRL',
-      status: 'new',
-      probability: 0,
-      created_by: user.id,
-      updated_by: user.id,
-    }));
+    // Create clients for each imported lead
+    for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
+      const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
+      const clientsToInsert = batch.map(lead => ({
+        name: lead.nome,
+        email: lead.email1 || null,
+        phone: lead.celular1 || null,
+        status: 'active',
+        created_by: user.id,
+      }));
+
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .insert(clientsToInsert)
+        .select('id, name');
+
+      if (clientError) {
+        console.error('[Leads Import] Erro ao criar clientes:', clientError.message);
+      } else if (clientData) {
+        totalClientsCreated += clientData.length;
+        clientData.forEach((c: { id: string; name: string }) => {
+          clientIdMap[c.name] = c.id;
+        });
+      }
+    }
+    console.log(`[Leads Import] Total clientes criados: ${totalClientsCreated}`);
+
+    // ============================================================
+    // INSERT into 'leads' table so they appear in the Pipeline
+    // ============================================================
+    let totalPipelineInserted = 0;
+    const pipelineErrors: string[] = [];
+
+    const pipelineLeads = leadsToInsert.map(lead => {
+      // Build rich description with ALL contact info
+      const contactParts: string[] = [];
+      
+      const phones = [lead.celular1, lead.celular2].filter(Boolean);
+      if (phones.length > 0) {
+        contactParts.push(`📱 Tel: ${phones.join(', ')}`);
+      }
+      
+      const emails = [lead.email1, lead.email2, lead.email3].filter(Boolean);
+      if (emails.length > 0) {
+        contactParts.push(`📧 Email: ${emails.join(', ')}`);
+      }
+      
+      const description = contactParts.length > 0
+        ? contactParts.join(' | ')
+        : `Importado de: ${lead.arquivo_origem}`;
+
+      return {
+        title: lead.nome,
+        description,
+        source: 'importacao',
+        value: 0,
+        currency: 'BRL',
+        status: 'new',
+        probability: 0,
+        client_id: clientIdMap[lead.nome] || null,
+        created_by: user.id,
+        updated_by: user.id,
+      };
+    });
 
     for (let i = 0; i < pipelineLeads.length; i += BATCH_SIZE) {
       const batch = pipelineLeads.slice(i, i + BATCH_SIZE);

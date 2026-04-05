@@ -30,21 +30,26 @@ export default function ClientsPage() {
   const loadClients = async () => {
     try {
       setLoading(true)
-      let query = supabase
-        .from('clients')
-        .select('*')
-        .order('created_at', { ascending: false })
 
-      // Comercial users only see their own clients
-      if (!isAdmin && userId) {
-        query = query.eq('created_by', userId)
+      // Use API route to bypass RLS for admins
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.')
+        return
       }
 
-      const { data, error } = await query
+      const response = await fetch('/api/clients', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
 
-      if (error) throw error
+      if (!response.ok) throw new Error('Erro ao carregar clientes')
 
-      setClients(data || [])
+      const result = await response.json()
+      setClients(result.clients || [])
     } catch (error) {
       console.error('Error loading clients:', error)
       toast.error('Erro ao carregar clientes')

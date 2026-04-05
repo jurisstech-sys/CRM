@@ -76,23 +76,29 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   const fetchLeads = async () => {
     try {
       setLoading(true)
-      let query = supabase
-        .from('leads')
-        .select(`
-          *,
-          clients(name, email)
-        `)
-        .in('status', ['new', 'qualified', 'proposal', 'won'])
-        .order('created_at', { ascending: false })
 
-      // Comercial users only see their own leads
-      if (!isAdminUser && currentUserId) {
-        query = query.eq('created_by', currentUserId)
+      // Get access token for API call
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.')
+        return
       }
 
-      const { data, error } = await query
+      // Use the API route which bypasses RLS for admins
+      const response = await fetch('/api/leads?status=new,qualified,proposal,won', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
 
-      if (error) throw error
+      if (!response.ok) {
+        throw new Error('Erro ao buscar leads')
+      }
+
+      const result = await response.json()
+      const data = result.leads
 
       // Group leads by status
       const grouped: PipelineData = {
@@ -146,7 +152,36 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     if (!over) return
 
     const draggedLeadId = active.id as string
-    const newStatus = over.id as string
+
+    // Determine the target status:
+    // If dropped on a column, over.id IS the stage id.
+    // If dropped on another lead card, we need to find which column that card belongs to.
+    let newStatus = over.id as string
+
+    // Check if over.id is a valid pipeline stage
+    const isStage = PIPELINE_STAGES.some((s) => s.id === newStatus)
+
+    if (!isStage) {
+      // over.id is a lead card — find which column it belongs to
+      const overData = over.data?.current
+      if (overData?.type === 'Column') {
+        newStatus = overData.stage
+      } else {
+        // Search which column contains the lead we're hovering over
+        let foundStatus = ''
+        for (const [status, statusLeads] of Object.entries(leads)) {
+          if (statusLeads.find((l) => l.id === newStatus)) {
+            foundStatus = status
+            break
+          }
+        }
+        if (foundStatus) {
+          newStatus = foundStatus
+        } else {
+          return // Can't determine target column
+        }
+      }
+    }
 
     // Find the lead and its current status
     let draggedLead: Lead | null = null
@@ -173,15 +208,23 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     newLeads[newStatus] = [draggedLead, ...newLeads[newStatus]]
     setLeads(newLeads)
 
-    // Update in Supabase
+    // Update in Supabase via API (bypasses RLS)
     try {
       setUpdatingId(draggedLeadId)
-      const { error } = await supabase
-        .from('leads')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', draggedLeadId)
 
-      if (error) {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const response = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: draggedLeadId, status: newStatus }),
+      })
+
+      if (!response.ok) {
         // Rollback on error
         await fetchLeads()
         toast.error('Erro ao atualizar lead')
