@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Home, Kanban, Upload, DollarSign } from 'lucide-react'
+import { Users, Home, Kanban, Upload, DollarSign, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function Sidebar() {
@@ -14,6 +14,7 @@ export function Sidebar() {
     { href: '/pipeline', label: 'Pipeline', icon: Kanban },
     { href: '/leads', label: 'Importar Leads', icon: Upload },
     { href: '/commissions', label: 'Comissões', icon: DollarSign },
+    { href: '/reports', label: 'Relatórios', icon: BarChart3 },
   ]
 
   return (
