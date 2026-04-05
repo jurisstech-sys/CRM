@@ -24,7 +24,6 @@ export default function Login() {
     setError('')
     // Simulação de login (será integrado com autenticação real depois)
     console.log('Tentativa de login com:', { email, password })
-    alert('Sistema de autenticação em desenvolvimento')
   }
 
   if (!isClient) {
