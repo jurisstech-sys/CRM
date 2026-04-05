@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Plus, Pencil, UserX, UserCheck, Shield, ShieldAlert } from 'lucide-react';
+import { Loader2, Plus, Pencil, Shield, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -21,7 +21,6 @@ interface UserRecord {
   email: string;
   full_name: string | null;
   role: string;
-  is_active: boolean;
   created_at: string;
 }
 
@@ -45,14 +44,11 @@ export default function UsersPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, full_name, role, is_active, created_at')
+        .select('id, email, full_name, role, created_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setUsers((data || []).map(u => ({
-        ...u,
-        is_active: u.is_active !== false, // default to true if null
-      })));
+      setUsers(data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast.error('Erro ao carregar usuários');
@@ -155,24 +151,6 @@ export default function UsersPage() {
       toast.error(error instanceof Error ? error.message : 'Erro ao salvar usuário');
     } finally {
       setFormSaving(false);
-    }
-  };
-
-  const toggleUserActive = async (user: UserRecord) => {
-    try {
-      const newStatus = !user.is_active;
-      const { error } = await supabase
-        .from('users')
-        .update({ is_active: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      toast.success(newStatus ? 'Usuário ativado!' : 'Usuário desativado!');
-      await fetchUsers();
-    } catch (error) {
-      console.error('Error toggling user:', error);
-      toast.error('Erro ao alterar status do usuário');
     }
   };
 
@@ -285,7 +263,7 @@ export default function UsersPage() {
                     <TableHead>Nome</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Papel</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Criado em</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -315,10 +293,8 @@ export default function UsersPage() {
                             {getRoleLabel(user.role)}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={user.is_active ? 'default' : 'destructive'}>
-                            {user.is_active ? 'Ativo' : 'Inativo'}
-                          </Badge>
+                        <TableCell className="text-sm text-gray-400">
+                          {new Date(user.created_at).toLocaleDateString('pt-BR')}
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
@@ -329,18 +305,6 @@ export default function UsersPage() {
                               title="Editar"
                             >
                               <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant={user.is_active ? 'destructive' : 'default'}
-                              size="sm"
-                              onClick={() => toggleUserActive(user)}
-                              title={user.is_active ? 'Desativar' : 'Ativar'}
-                            >
-                              {user.is_active ? (
-                                <UserX className="w-4 h-4" />
-                              ) : (
-                                <UserCheck className="w-4 h-4" />
-                              )}
                             </Button>
                           </div>
                         </TableCell>

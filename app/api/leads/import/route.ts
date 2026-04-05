@@ -19,6 +19,7 @@ interface ImportRequestBody {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
 
     const accessToken = authHeader.replace('Bearer ', '');
 
-    // Criar cliente Supabase com o token do usuário autenticado
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    // Criar cliente Supabase com ANON KEY para verificar autenticação
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false },
       global: {
         headers: {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Verificar se o usuário é válido
-    const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(accessToken);
     if (userError || !user) {
       console.error('[Leads Import] Usuário inválido:', userError?.message);
       return NextResponse.json(
@@ -65,6 +66,11 @@ export async function POST(request: NextRequest) {
       );
     }
     console.log('[Leads Import] Usuário autenticado:', user.id, user.email);
+
+    // Criar cliente Supabase com SERVICE_ROLE_KEY para BYPASS de RLS nas inserções
+    const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     // Parse do body
     const body = await request.json() as ImportRequestBody;

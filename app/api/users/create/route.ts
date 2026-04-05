@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         email,
         full_name: full_name || null,
         role: userRole,
-        is_active: true,
+        status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
