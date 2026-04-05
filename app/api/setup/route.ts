@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
   department VARCHAR(100),
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
   last_login TIMESTAMP WITH TIME ZONE,
+  commission_rate DECIMAL(5, 2) DEFAULT 0.00,
+  monthly_commission_total DECIMAL(15, 2) DEFAULT 0.00,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,

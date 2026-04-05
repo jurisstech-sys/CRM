@@ -19,6 +19,7 @@ import { Loader2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { createCommissionOnWin } from '@/lib/commissions'
 import KanbanColumn from './KanbanColumn'
 
 interface KanbanBoardProps {
@@ -174,7 +175,25 @@ export function KanbanBoard({ onCreateLead }: KanbanBoardProps) {
         return
       }
 
-      toast.success(`Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title}`)
+      // Create commission if moving to 'won' status
+      if (newStatus === 'won' && draggedLead.assigned_to && draggedLead.value) {
+        const commission = await createCommissionOnWin(
+          draggedLeadId,
+          draggedLead.assigned_to,
+          draggedLead.value,
+          newStatus
+        )
+
+        if (commission) {
+          toast.success(
+            `Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title} - Comissão de R$ ${commission.amount.toFixed(2)} registrada!`
+          )
+        } else {
+          toast.success(`Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title}`)
+        }
+      } else {
+        toast.success(`Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title}`)
+      }
     } catch (error) {
       console.error('Error updating lead:', error)
       await fetchLeads()
