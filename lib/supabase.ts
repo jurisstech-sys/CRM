@@ -1,16 +1,15 @@
+import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-let supabase: any = null
-let supabaseAdmin: any = null
+// Browser client that syncs session to cookies (required for middleware auth)
+const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
-// Initialize Supabase only if environment variables are available
-if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-  // For server-side operations with service role
+// Admin client for server-side operations (service role key)
+let supabaseAdmin: ReturnType<typeof createClient> | null = null
+if (supabaseUrl && (process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey)) {
   supabaseAdmin = createClient(
     supabaseUrl,
     process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
@@ -20,8 +19,6 @@ if (supabaseUrl && supabaseAnonKey) {
       }
     }
   )
-} else {
-  console.warn('⚠️ Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.')
 }
 
 export { supabase, supabaseAdmin }
