@@ -15,7 +15,21 @@ export default function Login() {
 
   useEffect(() => {
     setIsClient(true)
-  }, [])
+    
+    // Check if already logged in
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          console.log('✅ Already logged in, redirecting to dashboard')
+          router.replace('/dashboard')
+        }
+      } catch (err) {
+        console.error('Session check error:', err)
+      }
+    }
+    checkSession()
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,7 +39,6 @@ export default function Login() {
       return
     }
     
-    // Validação básica de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
       setError('Por favor, insira um email válido')
@@ -36,18 +49,23 @@ export default function Login() {
     setIsLoading(true)
 
     try {
-      // Tenta fazer login com Supabase
+      console.log('🔐 Attempting login for:', email.trim())
+      
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
       })
 
+      console.log('🔐 Auth response - error:', authError, 'session:', !!data?.session)
+
       if (authError) {
-        // Mensagens de erro mais amigáveis
+        console.error('❌ Auth error:', authError.message, authError.status)
         if (authError.message.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos')
         } else if (authError.message.includes('Email not confirmed')) {
           setError('Por favor, confirme seu email antes de fazer login')
+        } else if (authError.message.includes('Invalid API key')) {
+          setError('Erro de configuração do servidor. Contate o administrador.')
         } else {
           setError(authError.message || 'Erro ao fazer login. Tente novamente.')
         }
@@ -55,14 +73,23 @@ export default function Login() {
       }
 
       if (data?.session) {
-        // Login bem-sucedido, redireciona para dashboard
-        console.log('✅ Login realizado com sucesso:', data.user?.email)
-        router.push('/dashboard')
+        console.log('✅ Login successful:', data.user?.email)
+        
+        // Small delay to ensure cookies are set
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
+        // Use replace instead of push to avoid back-button loop
+        router.replace('/dashboard')
+        
+        // Fallback: force reload if router.replace doesn't work
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 1500)
       } else {
         setError('Erro ao criar sessão. Tente novamente.')
       }
     } catch (err) {
-      console.error('❌ Erro durante login:', err)
+      console.error('❌ Unexpected login error:', err)
       setError('Erro inesperado. Por favor, tente novamente.')
     } finally {
       setIsLoading(false)

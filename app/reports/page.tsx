@@ -177,7 +177,7 @@ export default function ReportsPage() {
         commission_rate: number;
         created_at: string;
       }
-      const formattedCommissions = (commissionsData as CommissionData[] || []).map((c: CommissionData) => ({
+      const formattedCommissions = ((commissionsData as unknown as CommissionData[]) || []).map((c: CommissionData) => ({
         id: c.id,
         lead_id: c.lead_id,
         lead_title: c.lead?.title || 'Unknown',
