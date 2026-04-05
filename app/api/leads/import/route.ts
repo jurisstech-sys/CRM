@@ -145,8 +145,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Leads Import] ====== FIM DA IMPORTAÇÃO ======`);
-    console.log(`[Leads Import] Total inserido: ${totalInserted}/${leadsToInsert.length}`);
+    console.log(`[Leads Import] ====== FIM DA IMPORTAÇÃO (imported_leads) ======`);
+    console.log(`[Leads Import] Total inserido em imported_leads: ${totalInserted}/${leadsToInsert.length}`);
+
+    // ============================================================
+    // ALSO insert into 'leads' table so they appear in the Pipeline
+    // ============================================================
+    let totalPipelineInserted = 0;
+    const pipelineErrors: string[] = [];
+
+    const pipelineLeads = leadsToInsert.map(lead => ({
+      title: lead.nome,
+      client_name: lead.nome,
+      description: `Importado de: ${lead.arquivo_origem}`,
+      source: 'importacao',
+      value: 0,
+      currency: 'BRL',
+      status: 'new',
+      probability: 0,
+      created_by: user.id,
+      updated_by: user.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+    for (let i = 0; i < pipelineLeads.length; i += BATCH_SIZE) {
+      const batch = pipelineLeads.slice(i, i + BATCH_SIZE);
+      console.log(`[Leads Import] Inserindo batch pipeline ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} leads...`);
+
+      const { data: pData, error: pError } = await supabase
+        .from('leads')
+        .insert(batch)
+        .select('id');
+
+      if (pError) {
+        console.error(`[Leads Import] Erro no batch pipeline ${Math.floor(i / BATCH_SIZE) + 1}:`, pError.message);
+        pipelineErrors.push(`Pipeline batch ${Math.floor(i / BATCH_SIZE) + 1}: ${pError.message}`);
+      } else {
+        totalPipelineInserted += pData?.length || 0;
+        console.log(`[Leads Import] ✅ Pipeline batch inserido: ${pData?.length || 0} leads`);
+      }
+    }
+
+    console.log(`[Leads Import] Total inserido em leads (pipeline): ${totalPipelineInserted}/${pipelineLeads.length}`);
 
     if (totalInserted === 0 && errors.length > 0) {
       return NextResponse.json(
@@ -158,13 +199,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const allErrors = [...errors, ...pipelineErrors];
     return NextResponse.json(
       {
         success: true,
         count: totalInserted,
+        pipelineCount: totalPipelineInserted,
         total: leadsToInsert.length,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `${totalInserted} leads importados com sucesso${errors.length > 0 ? ` (${errors.length} erros)` : ''}`,
+        errors: allErrors.length > 0 ? allErrors : undefined,
+        message: `${totalInserted} leads importados com sucesso (${totalPipelineInserted} adicionados ao pipeline)${allErrors.length > 0 ? ` (${allErrors.length} erros)` : ''}`,
       },
       { status: 200 }
     );

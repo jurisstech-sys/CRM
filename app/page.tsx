@@ -1,16 +1,41 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
     setIsClient(true)
-  }, [])
 
-  if (!isClient) {
-    return null
+    // Check if user is already logged in - redirect to dashboard
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          router.replace('/dashboard')
+          return
+        }
+      } catch (error) {
+        console.error('Session check error:', error)
+      } finally {
+        setChecking(false)
+      }
+    }
+
+    checkSession()
+  }, [router])
+
+  if (!isClient || checking) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white flex items-center justify-center">
+        <div className="animate-pulse text-xl">Carregando...</div>
+      </main>
+    )
   }
 
   return (
@@ -25,20 +50,13 @@ export default function Home() {
           <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-8 mb-8">
             <h2 className="text-2xl font-semibold mb-4">Bem-vindo! 👋</h2>
             <p className="text-slate-300 mb-6">
-              Esta é a página inicial do JurisIA CRM. O sistema está pronto para ser explorado.
+              Faça login para acessar o painel de controle do JurisIA CRM.
             </p>
             
             <div className="space-y-4">
-              <a
-                href="/dashboard"
-                className="inline-block w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Acessar Dashboard
-              </a>
-              
               <button
-                onClick={() => window.location.href = '/login'}
-                className="inline-block w-full px-6 py-3 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition-colors"
+                onClick={() => router.push('/login')}
+                className="inline-block w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Fazer Login
               </button>

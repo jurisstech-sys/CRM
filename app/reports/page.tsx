@@ -312,13 +312,13 @@ export default function ReportsPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Cliente</label>
-              <Select value={selectedClient} onValueChange={setSelectedClient}>
+              <Select value={selectedClient || 'all'} onValueChange={(v) => setSelectedClient(v === 'all' ? '' : v)}>
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
-                  {uniqueClients.map(client => (
+                  <SelectItem value="all">Todos</SelectItem>
+                  {uniqueClients.filter(c => c && c.trim() !== '').map(client => (
                     <SelectItem key={client} value={client}>
                       {client}
                     </SelectItem>
@@ -330,12 +330,12 @@ export default function ReportsPage() {
             {canViewFullReports && (
               <div>
                 <label className="text-sm font-medium">Vendedor</label>
-                <Select value={selectedSeller} onValueChange={setSelectedSeller}>
+                <Select value={selectedSeller || 'all'} onValueChange={(v) => setSelectedSeller(v === 'all' ? '' : v)}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     {sellers.map(seller => (
                       <SelectItem key={seller.id} value={seller.id}>
                         {seller.name}
