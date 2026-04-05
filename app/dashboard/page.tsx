@@ -1,94 +1,118 @@
 'use client'
 
+import { AppLayout } from '@/components/layout/app-layout'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Users, FileText, Clock } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
-export default function Dashboard() {
-  const [isClient, setIsClient] = useState(false)
+interface Stats {
+  totalClients: number
+  totalProcesses: number
+  pendingTasks: number
+}
+
+export default function DashboardPage() {
+  const [stats, setStats] = useState<Stats>({
+    totalClients: 0,
+    totalProcesses: 0,
+    pendingTasks: 0,
+  })
 
   useEffect(() => {
-    setIsClient(true)
+    loadStats()
   }, [])
 
-  if (!isClient) {
-    return null
+  const loadStats = async () => {
+    try {
+      const [clientsRes, processesRes] = await Promise.all([
+        supabase.from('clients').select('id', { count: 'exact', head: true }),
+        supabase.from('processes').select('id', { count: 'exact', head: true }),
+      ])
+
+      setStats({
+        totalClients: clientsRes.count || 0,
+        totalProcesses: processesRes.count || 0,
+        pendingTasks: 0,
+      })
+    } catch (error) {
+      console.error('Error loading stats:', error)
+    }
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-      <div className="container mx-auto px-4 py-20">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="mb-12 flex justify-between items-center">
-            <h1 className="text-4xl font-bold">Dashboard</h1>
-            <Link
-              href="/"
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
-            >
-              ← Voltar
-            </Link>
-          </div>
+    <AppLayout>
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground mt-2">Bem-vindo ao JurisIA CRM</p>
+        </div>
 
-          {/* Welcome Section */}
-          <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-8 mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Bem-vindo ao Dashboard! 📊</h2>
-            <p className="text-slate-300 mb-6">
-              Este é o painel de controle do JurisIA CRM. Aqui você pode gerenciar clientes, processos e tarefas.
-            </p>
-            <p className="text-slate-400 text-sm">
-              O sistema está em desenvolvimento. Mais funcionalidades serão adicionadas em breve.
-            </p>
-          </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total de Clientes</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalClients}</div>
+              <p className="text-xs text-muted-foreground mt-1">Clientes cadastrados</p>
+            </CardContent>
+          </Card>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
-              <h3 className="text-sm text-slate-400 uppercase tracking-wider mb-2">Total de Clientes</h3>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-xs text-slate-500 mt-2">Nenhum cliente cadastrado</p>
-            </div>
-            
-            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
-              <h3 className="text-sm text-slate-400 uppercase tracking-wider mb-2">Processos Ativos</h3>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-xs text-slate-500 mt-2">Nenhum processo em andamento</p>
-            </div>
-            
-            <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-6">
-              <h3 className="text-sm text-slate-400 uppercase tracking-wider mb-2">Tarefas Pendentes</h3>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-xs text-slate-500 mt-2">Nenhuma tarefa pendente</p>
-            </div>
-          </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Processos Ativos</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalProcesses}</div>
+              <p className="text-xs text-muted-foreground mt-1">Processos em andamento</p>
+            </CardContent>
+          </Card>
 
-          {/* Features Coming Soon */}
-          <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-8">
-            <h3 className="text-xl font-semibold mb-6">Funcionalidades em Desenvolvimento 🚀</h3>
-            <ul className="space-y-3 text-slate-300">
-              <li className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                Gestão completa de clientes
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tarefas Pendentes</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.pendingTasks}</div>
+              <p className="text-xs text-muted-foreground mt-1">Tarefas a fazer</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Próximas Funcionalidades</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Kanban de Processos
               </li>
-              <li className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                Acompanhamento de processos legais
+              <li className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Upload de Leads
               </li>
-              <li className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                Sistema de tarefas e agenda
+              <li className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Cálculo de Comissões
               </li>
-              <li className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                Relatórios e análises
+              <li className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Relatórios Personalizados
               </li>
-              <li className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-3"></span>
-                Integração com Supabase
+              <li className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Timeline de Atividades
               </li>
             </ul>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
-    </main>
+    </AppLayout>
   )
 }
