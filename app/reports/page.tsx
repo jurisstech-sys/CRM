@@ -79,15 +79,16 @@ export default function ReportsPage() {
       setLoading(true);
       interface UserData {
         id: string;
-        display_name: string | null;
+        full_name: string | null;
+        email: string | null;
       }
       const { data: usersData } = await supabase
         .from('users')
-        .select('id, display_name')
-        .order('display_name', { ascending: true });
+        .select('id, full_name, email')
+        .order('email', { ascending: true });
 
       if (usersData) {
-        setSellers((usersData as UserData[]).map(u => ({ id: u.id, name: u.display_name || 'Unknown' })));
+        setSellers((usersData as UserData[]).map(u => ({ id: u.id, name: u.full_name || u.email || 'Unknown' })));
       }
     } catch (error) {
       console.error('Error fetching sellers:', error);
@@ -148,7 +149,7 @@ export default function ReportsPage() {
           lead_id,
           lead:leads(title),
           seller_id,
-          seller:users(display_name),
+          seller:users(full_name, email),
           amount,
           commission_rate,
           created_at
@@ -172,7 +173,7 @@ export default function ReportsPage() {
         id: string;
         lead_id: string;
         lead?: { title: string };
-        seller?: { display_name: string };
+        seller?: { full_name: string | null; email: string | null };
         amount: number;
         commission_rate: number;
         created_at: string;
@@ -181,7 +182,7 @@ export default function ReportsPage() {
         id: c.id,
         lead_id: c.lead_id,
         lead_title: c.lead?.title || 'Unknown',
-        seller_name: c.seller?.display_name || 'Unknown',
+        seller_name: c.seller?.full_name || c.seller?.email || 'Unknown',
         amount: c.amount,
         commission_rate: c.commission_rate,
         created_at: c.created_at,

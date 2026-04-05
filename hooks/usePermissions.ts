@@ -28,17 +28,12 @@ export interface UsePermissionsReturn {
   role: UserRole | null
 }
 
-/**
- * Hook that returns the current user's permissions
- * Fetches the user's role from Supabase and computes permissions
- */
 export function usePermissions(): UsePermissionsReturn {
   const [user, setUser] = useState<CRMUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchUserRole = useCallback(async () => {
     try {
-      // Get authenticated user from Supabase Auth
       const {
         data: { user: authUser },
         error: authError,
@@ -51,14 +46,15 @@ export function usePermissions(): UsePermissionsReturn {
       }
 
       // Fetch user role from the users table
+      // The users table uses 'id' = auth user id directly
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, role, full_name, display_name')
+        .select('id, role, full_name, email')
         .eq('id', authUser.id)
         .single()
 
       if (userError || !userData) {
-        // If user not found in users table, default to 'comercial'
+        // User exists in auth but not in users table — default to comercial
         setUser({
           id: authUser.id,
           email: authUser.email,
@@ -67,10 +63,9 @@ export function usePermissions(): UsePermissionsReturn {
       } else {
         setUser({
           id: userData.id,
-          email: authUser.email,
+          email: userData.email || authUser.email,
           role: (userData.role as UserRole) || 'comercial',
-          full_name: userData.full_name,
-          display_name: userData.display_name,
+          full_name: userData.full_name || undefined,
         })
       }
     } catch (error) {
@@ -84,11 +79,9 @@ export function usePermissions(): UsePermissionsReturn {
   useEffect(() => {
     fetchUserRole()
 
-    // Listen for auth state changes
     const {
       data: { subscription },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         fetchUserRole()
       } else {

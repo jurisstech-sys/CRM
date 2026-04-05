@@ -27,7 +27,7 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // Rotas privadas que exigem autenticação
+  // Private routes that require authentication
   const privateRoutes = [
     '/dashboard',
     '/clients',
@@ -42,14 +42,12 @@ export async function middleware(req: NextRequest) {
     req.nextUrl.pathname.startsWith(route)
   )
 
-  // Se a rota é privada e o usuário não está autenticado, redireciona para /login
+  // Redirect to login if not authenticated
   if (isPrivateRoute && !session) {
-    const loginUrl = new URL('/login', req.url)
-    loginUrl.searchParams.set('redirect', req.nextUrl.pathname)
-    return NextResponse.redirect(loginUrl)
+    return NextResponse.redirect(new URL('/login', req.url))
   }
 
-  // Se o usuário está autenticado e tenta acessar /login, redireciona para /dashboard
+  // Redirect authenticated users away from login
   if (req.nextUrl.pathname === '/login' && session) {
     return NextResponse.redirect(new URL('/dashboard', req.url))
   }

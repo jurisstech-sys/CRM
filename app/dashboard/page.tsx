@@ -11,14 +11,14 @@ import { getRoleLabel } from '@/lib/permissions'
 
 interface Stats {
   totalClients: number
-  totalProcesses: number
+  totalLeads: number
   pendingTasks: number
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({
     totalClients: 0,
-    totalProcesses: 0,
+    totalLeads: 0,
     pendingTasks: 0,
   })
 
@@ -34,27 +34,23 @@ export default function DashboardPage() {
   const loadStats = async () => {
     try {
       if (isAdmin) {
-        // Admin sees all stats
-        const [clientsRes, processesRes] = await Promise.all([
+        const [clientsRes, leadsRes] = await Promise.all([
           supabase.from('clients').select('id', { count: 'exact', head: true }),
-          supabase.from('processes').select('id', { count: 'exact', head: true }),
+          supabase.from('leads').select('id', { count: 'exact', head: true }),
         ])
-
         setStats({
           totalClients: clientsRes.count || 0,
-          totalProcesses: processesRes.count || 0,
+          totalLeads: leadsRes.count || 0,
           pendingTasks: 0,
         })
       } else if (userId) {
-        // Comercial sees only their own stats
-        const [clientsRes, processesRes] = await Promise.all([
+        const [clientsRes, leadsRes] = await Promise.all([
           supabase.from('clients').select('id', { count: 'exact', head: true }).eq('created_by', userId),
-          supabase.from('processes').select('id', { count: 'exact', head: true }),
+          supabase.from('leads').select('id', { count: 'exact', head: true }),
         ])
-
         setStats({
           totalClients: clientsRes.count || 0,
-          totalProcesses: processesRes.count || 0,
+          totalLeads: leadsRes.count || 0,
           pendingTasks: 0,
         })
       }
@@ -63,15 +59,16 @@ export default function DashboardPage() {
     }
   }
 
+  const displayName = user?.full_name || user?.email || ''
+
   return (
     <AppLayout>
       <div className="space-y-8">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground mt-2">
-              Bem-vindo ao JurisIA CRM
-              {user?.display_name || user?.full_name ? `, ${user.display_name || user.full_name}` : ''}
+            <p className="text-muted-foreground mt-1">
+              Bem-vindo ao JurisIA CRM{displayName ? `, ${displayName}` : ''}
             </p>
           </div>
           {role && (
@@ -99,12 +96,12 @@ export default function DashboardPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Processos Ativos</CardTitle>
+              <CardTitle className="text-sm font-medium">Total de Leads</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.totalProcesses}</div>
-              <p className="text-xs text-muted-foreground mt-1">Processos em andamento</p>
+              <div className="text-2xl font-bold">{stats.totalLeads}</div>
+              <p className="text-xs text-muted-foreground mt-1">Leads no sistema</p>
             </CardContent>
           </Card>
 
@@ -122,29 +119,29 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Próximas Funcionalidades</CardTitle>
+            <CardTitle>Funcionalidades em Desenvolvimento 🚀</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Kanban de Processos
+                Gestão completa de clientes
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Upload de Leads
+                Pipeline Kanban de Leads
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Cálculo de Comissões
+                Sistema de Comissões
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Relatórios Personalizados
+                Relatórios e Análises
               </li>
               <li className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-500" />
-                Timeline de Atividades
+                Integração com Supabase
               </li>
             </ul>
           </CardContent>
