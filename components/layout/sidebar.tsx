@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Home, Kanban, Upload, DollarSign, BarChart3, Clock, UserCog, Settings } from 'lucide-react'
+import { Users, Home, Kanban, Upload, DollarSign, BarChart3, Clock, UserCog, Settings, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermissions } from '@/hooks/usePermissions'
 
@@ -20,6 +20,7 @@ export function Sidebar() {
     { href: '/reports', label: 'Relatórios', icon: BarChart3, adminOnly: false },
     { href: '/activities', label: 'Atividades', icon: Clock, adminOnly: false },
     { href: '/users', label: 'Usuários', icon: UserCog, adminOnly: true },
+    { href: '/admin/migrate-leads', label: 'Migrar Leads', icon: Database, adminOnly: true },
   ]
 
   return (

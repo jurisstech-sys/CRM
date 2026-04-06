@@ -36,6 +36,7 @@ export async function middleware(req: NextRequest) {
     '/commissions',
     '/reports',
     '/activities',
+    '/admin',
   ]
 
   const isPrivateRoute = privateRoutes.some((route) =>
