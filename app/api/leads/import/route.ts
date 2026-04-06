@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
         email1: String(lead.email1 || '').trim() || null,
         email2: String(lead.email2 || '').trim() || null,
         email3: String(lead.email3 || '').trim() || null,
-        status: 'novo',
+        status: 'backlog',
         arquivo_origem: fileName || 'importacao',
         imported_by: user.id,
       }));
