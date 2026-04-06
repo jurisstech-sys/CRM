@@ -51,19 +51,45 @@ export default function CommissionConfigPage() {
     try {
       setLoading(true)
 
-      // Fetch users
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select('id, full_name, email, role, commission_rate')
-        .order('full_name', { ascending: true })
+      // Fetch users via API route (uses service role to bypass RLS)
+      const session = await supabase.auth.getSession()
+      const token = session.data.session?.access_token
 
-      if (usersError) {
-        console.error('Error fetching users:', usersError)
-        toast.error('Erro ao carregar usuários')
-        return
+      let usersData: UserInfo[] = []
+
+      if (token) {
+        try {
+          const usersRes = await fetch('/api/users/list', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (usersRes.ok) {
+            const usersResult = await usersRes.json()
+            usersData = usersResult.users || []
+          } else {
+            console.error('Error fetching users from API, trying direct query...')
+          }
+        } catch (apiError) {
+          console.error('API fetch failed:', apiError)
+        }
       }
 
-      setUsers(usersData || [])
+      // Fallback: direct query if API fails
+      if (usersData.length === 0) {
+        const { data: directUsers, error: usersError } = await supabase
+          .from('users')
+          .select('id, full_name, email, role, commission_rate')
+          .order('full_name', { ascending: true })
+
+        if (usersError) {
+          console.error('Error fetching users:', usersError)
+          toast.error('Erro ao carregar usuários')
+          return
+        }
+        usersData = directUsers || []
+      }
+
+      console.log('Usuários encontrados:', usersData)
+      setUsers(usersData)
 
       // Fetch existing commission configs
       try {

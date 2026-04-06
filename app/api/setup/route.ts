@@ -206,6 +206,20 @@ CREATE TABLE IF NOT EXISTS commission_config (
 CREATE INDEX IF NOT EXISTS idx_commission_config_user_id ON commission_config(user_id);
 CREATE INDEX IF NOT EXISTS idx_commission_config_stage ON commission_config(stage);
 
+-- Lead comments table for timeline
+CREATE TABLE IF NOT EXISTS lead_comments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  comment TEXT NOT NULL,
+  files JSONB DEFAULT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_comments_lead_id ON lead_comments(lead_id);
+CREATE INDEX IF NOT EXISTS idx_lead_comments_user_id ON lead_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_lead_comments_created_at ON lead_comments(created_at);
+
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_type ON audit_logs(entity_type);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
@@ -262,6 +276,7 @@ ALTER TABLE commissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commission_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lead_comments ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Users can view all users" ON users;
@@ -311,6 +326,10 @@ CREATE POLICY "Users can view audit logs" ON audit_logs FOR SELECT USING (
 -- Commission config policies
 DROP POLICY IF EXISTS "Admin can manage commission config" ON commission_config;
 CREATE POLICY "Admin can manage commission config" ON commission_config FOR ALL USING (TRUE);
+
+-- Lead comments policies
+DROP POLICY IF EXISTS "All users can manage lead comments" ON lead_comments;
+CREATE POLICY "All users can manage lead comments" ON lead_comments FOR ALL USING (TRUE);
 `
 
 const DEFAULT_PIPELINE_STAGES = [
