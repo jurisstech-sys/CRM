@@ -215,22 +215,29 @@ export default function ReportsPage() {
         }),
       });
 
-      if (!response.ok) throw new Error('Falha ao gerar PDF');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.error || 'Falha ao gerar PDF');
+      }
 
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
+      a.style.display = 'none';
       a.href = url;
       a.download = `relatorio_completo_${format(new Date(), 'dd_MM_yyyy')}.pdf`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
 
       toast.success('PDF gerado com sucesso!');
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast.error('Erro ao gerar PDF');
+      toast.error(error instanceof Error ? error.message : 'Erro ao gerar PDF');
     } finally {
       setGeneratingPdf(false);
     }
@@ -253,17 +260,24 @@ export default function ReportsPage() {
         }),
       });
 
-      if (!response.ok) throw new Error('Falha ao gerar Excel');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.error || 'Falha ao gerar Excel');
+      }
 
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const excelBlob = new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(excelBlob);
       const a = document.createElement('a');
+      a.style.display = 'none';
       a.href = url;
       a.download = `relatorio_dados_${format(new Date(), 'dd_MM_yyyy')}.xlsx`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
 
       toast.success('Excel gerado com sucesso!');
     } catch (error) {

@@ -466,6 +466,11 @@ export async function POST(request: NextRequest) {
             status: 'new',
             probability: 0,
             client_id: clientIdMap[lead.nome] || null,
+            email1: lead.email1 || null,
+            email2: lead.email2 || null,
+            email3: lead.email3 || null,
+            phone1: lead.celular1 || null,
+            phone2: lead.celular2 || null,
             created_by: user.id,
             updated_by: user.id,
           })

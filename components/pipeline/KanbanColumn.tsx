@@ -17,14 +17,21 @@ interface KanbanColumnProps {
   onDeleteLead?: (id: string) => void
   onUpdateLead: (lead: Lead) => void
   isUpdating: boolean
+  onLeadClick?: (lead: Lead) => void
+  selectedLeads?: string[]
+  onSelectLead?: (id: string, selected: boolean) => void
+  showCheckboxes?: boolean
 }
 
 function DroppableColumn({
   stage,
   leads,
   onDeleteLead,
-  onUpdateLead,
   isUpdating,
+  onLeadClick,
+  selectedLeads = [],
+  onSelectLead,
+  showCheckboxes,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
@@ -35,6 +42,7 @@ function DroppableColumn({
   })
 
   const leadsIds = leads.map((lead) => lead.id)
+  const selectedCount = leads.filter((l) => selectedLeads.includes(l.id)).length
 
   return (
     <div
@@ -50,6 +58,9 @@ function DroppableColumn({
         </h2>
         <p className="text-xs text-slate-400 mt-1">
           {leads.length} {leads.length === 1 ? 'lead' : 'leads'}
+          {selectedCount > 0 && (
+            <span className="text-blue-400 ml-1">({selectedCount} selecionados)</span>
+          )}
         </p>
       </div>
 
@@ -69,8 +80,11 @@ function DroppableColumn({
                 <SortableLeadCard
                   lead={lead}
                   onDelete={onDeleteLead}
-                  onUpdate={onUpdateLead}
                   isUpdating={isUpdating}
+                  onLeadClick={onLeadClick}
+                  isSelected={selectedLeads.includes(lead.id)}
+                  onSelectLead={onSelectLead}
+                  showCheckbox={showCheckboxes}
                 />
               </div>
             ))
@@ -84,11 +98,14 @@ function DroppableColumn({
 interface SortableLeadCardProps {
   lead: Lead
   onDelete?: (id: string) => void
-  onUpdate: (lead: Lead) => void
   isUpdating: boolean
+  onLeadClick?: (lead: Lead) => void
+  isSelected?: boolean
+  onSelectLead?: (id: string, selected: boolean) => void
+  showCheckbox?: boolean
 }
 
-function SortableLeadCard({ lead, onDelete, onUpdate }: SortableLeadCardProps) {
+function SortableLeadCard({ lead, onDelete, onLeadClick, isSelected, onSelectLead, showCheckbox }: SortableLeadCardProps) {
   const { setNodeRef, transform, transition, isDragging } = useSortable({
     id: lead.id,
     data: {
@@ -110,7 +127,10 @@ function SortableLeadCard({ lead, onDelete, onUpdate }: SortableLeadCardProps) {
       <LeadCard
         lead={lead}
         onDelete={onDelete}
-        onUpdate={onUpdate}
+        onClick={onLeadClick}
+        isSelected={isSelected}
+        onSelect={onSelectLead}
+        showCheckbox={showCheckbox}
       />
     </div>
   )

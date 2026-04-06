@@ -229,12 +229,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     summarySheet.getColumn('value').numFmt = '[R$]#,##0.00';
 
     // Generate buffer
-    const buffer = await workbook.xlsx.writeBuffer();
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="relatorio_${Date.now()}.xlsx"`,
+        'Content-Length': String(buffer.length),
       },
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   DndContext,
   closestCorners,
@@ -15,7 +15,8 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { Lead } from './LeadCard'
-import { Loader2, Plus } from 'lucide-react'
+import { LeadModal } from './LeadModal'
+import { Loader2, Plus, Trash2, CheckSquare, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -51,6 +52,15 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
+  // Selection state
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([])
+  const [showCheckboxes, setShowCheckboxes] = useState(false)
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false)
+
+  // Modal state
+  const [modalLead, setModalLead] = useState<Lead | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -73,11 +83,10 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminUser, currentUserId])
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     try {
       setLoading(true)
 
-      // Get access token for API call
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
@@ -86,7 +95,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         return
       }
 
-      // Use the API route which bypasses RLS for admins
       const response = await fetch('/api/leads?status=new,qualified,proposal,won', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -100,7 +108,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const result = await response.json()
       const data = result.leads
 
-      // Group leads by status
       const grouped: PipelineData = {
         new: [],
         qualified: [],
@@ -123,6 +130,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           expected_close_date: lead.expected_close_date,
           probability: lead.probability,
           next_follow_up: lead.next_follow_up,
+          email1: lead.email1,
+          email2: lead.email2,
+          email3: lead.email3,
+          phone1: lead.phone1,
+          phone2: lead.phone2,
           created_at: lead.created_at,
           updated_at: lead.updated_at,
           created_by: lead.created_by,
@@ -144,6 +156,97 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     } finally {
       setLoading(false)
     }
+  }, [isAdminUser, currentUserId])
+
+  // ---- Lead click -> open modal ----
+  const handleLeadClick = (lead: Lead) => {
+    if (showCheckboxes) return // Don't open modal when in selection mode
+    setModalLead(lead)
+    setIsModalOpen(true)
+  }
+
+  // ---- Selection handlers ----
+  const handleSelectLead = (id: string, selected: boolean) => {
+    setSelectedLeads((prev) =>
+      selected ? [...prev, id] : prev.filter((lid) => lid !== id)
+    )
+  }
+
+  const handleSelectAll = () => {
+    const allIds = Object.values(leads).flat().map((l) => l.id)
+    if (selectedLeads.length === allIds.length) {
+      setSelectedLeads([])
+    } else {
+      setSelectedLeads(allIds)
+    }
+  }
+
+  const toggleSelectionMode = () => {
+    if (showCheckboxes) {
+      setShowCheckboxes(false)
+      setSelectedLeads([])
+    } else {
+      setShowCheckboxes(true)
+    }
+  }
+
+  // ---- Bulk delete ----
+  const handleDeleteSelected = async () => {
+    if (selectedLeads.length === 0) {
+      toast.error('Nenhum lead selecionado')
+      return
+    }
+
+    if (!window.confirm(`Tem certeza que deseja excluir ${selectedLeads.length} lead(s)? Esta ação não pode ser desfeita.`)) {
+      return
+    }
+
+    try {
+      setIsDeletingBatch(true)
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        toast.error('Sessão expirada')
+        return
+      }
+
+      const response = await fetch('/api/leads/delete-batch', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: selectedLeads }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Erro ao excluir')
+      }
+
+      const result = await response.json()
+
+      // Log activity
+      await logActivity(
+        'delete',
+        'lead',
+        'batch',
+        `${result.deleted} leads excluídos em massa`,
+        'Exclusão em massa'
+      )
+
+      toast.success(`${result.deleted} lead(s) excluído(s) com sucesso`)
+      setSelectedLeads([])
+      setShowCheckboxes(false)
+      await fetchLeads()
+    } catch (error) {
+      console.error('Error batch deleting:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao excluir leads')
+    } finally {
+      setIsDeletingBatch(false)
+    }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -153,21 +256,14 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
 
     const draggedLeadId = active.id as string
 
-    // Determine the target status:
-    // If dropped on a column, over.id IS the stage id.
-    // If dropped on another lead card, we need to find which column that card belongs to.
     let newStatus = over.id as string
-
-    // Check if over.id is a valid pipeline stage
     const isStage = PIPELINE_STAGES.some((s) => s.id === newStatus)
 
     if (!isStage) {
-      // over.id is a lead card — find which column it belongs to
       const overData = over.data?.current
       if (overData?.type === 'Column') {
         newStatus = overData.stage
       } else {
-        // Search which column contains the lead we're hovering over
         let foundStatus = ''
         for (const [status, statusLeads] of Object.entries(leads)) {
           if (statusLeads.find((l) => l.id === newStatus)) {
@@ -178,12 +274,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         if (foundStatus) {
           newStatus = foundStatus
         } else {
-          return // Can't determine target column
+          return
         }
       }
     }
 
-    // Find the lead and its current status
     let draggedLead: Lead | null = null
     let oldStatus = ''
 
@@ -208,7 +303,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     newLeads[newStatus] = [draggedLead, ...newLeads[newStatus]]
     setLeads(newLeads)
 
-    // Update in Supabase via API (bypasses RLS)
     try {
       setUpdatingId(draggedLeadId)
 
@@ -225,13 +319,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       })
 
       if (!response.ok) {
-        // Rollback on error
         await fetchLeads()
         toast.error('Erro ao atualizar lead')
         return
       }
 
-      // Log the activity
       const oldStatusTitle = PIPELINE_STAGES.find((s) => s.id === oldStatus)?.title || oldStatus
       const newStatusTitle = PIPELINE_STAGES.find((s) => s.id === newStatus)?.title || newStatus
       await logActivity(
@@ -244,7 +336,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         newStatusTitle
       )
 
-      // Create commission if moving to 'won' status
       if (newStatus === 'won' && draggedLead.assigned_to && draggedLead.value) {
         const commission = await createCommissionOnWin(
           draggedLeadId,
@@ -280,8 +371,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
 
     try {
       setUpdatingId(leadId)
-      
-      // Find lead before deletion for logging
+
       let leadTitle = 'Lead desconhecido'
       for (const [, statusLeads] of Object.entries(leads)) {
         const found = statusLeads.find((l) => l.id === leadId)
@@ -298,7 +388,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
 
       if (error) throw error
 
-      // Log the activity
       await logActivity(
         'delete',
         'lead',
@@ -307,7 +396,6 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         leadTitle
       )
 
-      // Remove from local state
       const newLeads = { ...leads }
       for (const status in newLeads) {
         newLeads[status] = newLeads[status].filter((l) => l.id !== leadId)
@@ -326,8 +414,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   const handleUpdateLead = async (updatedLead: Lead) => {
     try {
       setUpdatingId(updatedLead.id)
-      
-      // Find original lead for comparison
+
       let originalLead: Lead | null = null
       for (const [, statusLeads] of Object.entries(leads)) {
         const found = statusLeads.find((l) => l.id === updatedLead.id)
@@ -337,30 +424,39 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         }
       }
 
-      const { error } = await supabase
-        .from('leads')
-        .update({
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const response = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: updatedLead.id,
           title: updatedLead.title,
           description: updatedLead.description,
           value: updatedLead.value,
           expected_close_date: updatedLead.expected_close_date,
           probability: updatedLead.probability,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', updatedLead.id)
+          email1: updatedLead.email1,
+          email2: updatedLead.email2,
+          email3: updatedLead.email3,
+          phone1: updatedLead.phone1,
+          phone2: updatedLead.phone2,
+        }),
+      })
 
-      if (error) throw error
+      if (!response.ok) throw new Error('Erro ao atualizar')
 
-      // Log the activity
+      // Log activity
       const changes = []
       if (originalLead?.title !== updatedLead.title) {
         changes.push(`título: "${originalLead?.title}" → "${updatedLead.title}"`)
       }
       if (originalLead?.value !== updatedLead.value) {
         changes.push(`valor: R$ ${originalLead?.value} → R$ ${updatedLead.value}`)
-      }
-      if (originalLead?.probability !== updatedLead.probability) {
-        changes.push(`probabilidade: ${originalLead?.probability}% → ${updatedLead.probability}%`)
       }
 
       await logActivity(
@@ -398,39 +494,107 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     )
   }
 
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Pipeline de Leads</h1>
-          <Button
-            onClick={onCreateLead}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Lead
-          </Button>
-        </div>
+  const totalLeads = Object.values(leads).flat().length
 
-        {/* Kanban Board */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-8">
-          {PIPELINE_STAGES.map((stage) => (
-            <KanbanColumn
-              key={stage.id}
-              stage={stage}
-              leads={leads[stage.id]}
-              onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
-              onUpdateLead={handleUpdateLead}
-              isUpdating={updatingId !== null}
-            />
-          ))}
+  return (
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h1 className="text-2xl font-bold text-white">Pipeline de Leads</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Selection mode toggle */}
+              {canDeleteLeads && totalLeads > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleSelectionMode}
+                    className={`border-slate-700 ${showCheckboxes ? 'bg-blue-600/20 text-blue-300' : ''}`}
+                  >
+                    {showCheckboxes ? (
+                      <><Square className="w-4 h-4 mr-2" />Cancelar Seleção</>
+                    ) : (
+                      <><CheckSquare className="w-4 h-4 mr-2" />Selecionar</>
+                    )}
+                  </Button>
+
+                  {showCheckboxes && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSelectAll}
+                        className="border-slate-700"
+                      >
+                        {selectedLeads.length === totalLeads ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleDeleteSelected}
+                        disabled={selectedLeads.length === 0 || isDeletingBatch}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        {isDeletingBatch ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4 mr-2" />
+                        )}
+                        Excluir ({selectedLeads.length})
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+
+              <Button
+                onClick={onCreateLead}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Novo Lead
+              </Button>
+            </div>
+          </div>
+
+          {/* Kanban Board */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-8">
+            {PIPELINE_STAGES.map((stage) => (
+              <KanbanColumn
+                key={stage.id}
+                stage={stage}
+                leads={leads[stage.id]}
+                onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
+                onUpdateLead={handleUpdateLead}
+                isUpdating={updatingId !== null}
+                onLeadClick={handleLeadClick}
+                selectedLeads={selectedLeads}
+                onSelectLead={handleSelectLead}
+                showCheckboxes={showCheckboxes}
+              />
+            ))}
+          </div>
         </div>
-      </div>
-    </DndContext>
+      </DndContext>
+
+      {/* Lead Detail Modal */}
+      <LeadModal
+        lead={modalLead}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false)
+          setModalLead(null)
+        }}
+        onSave={handleUpdateLead}
+        onDelete={canDeleteLeads ? handleDeleteLead : undefined}
+        canDelete={canDeleteLeads}
+      />
+    </>
   )
 }

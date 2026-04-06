@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { jsPDF } from 'jspdf';
 
 interface Client {
   id: string;
@@ -30,8 +31,7 @@ interface Commission {
   created_at: string;
 }
 
-// Lightweight PDF generator using text-based approach
-function generatePDFText(
+function generatePDF(
   startDate: string,
   endDate: string,
   selectedClient: string,
@@ -39,93 +39,191 @@ function generatePDFText(
   clients: Client[],
   leads: Lead[],
   commissions: Commission[]
-): string {
-  const lines: string[] = [];
+): Uint8Array {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 20;
 
-  // Header
-  lines.push('JurisIA CRM - Relatório Completo de Dados');
-  lines.push('');
-  lines.push(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`);
-  lines.push(`Período: ${startDate} a ${endDate}`);
-  if (selectedClient) lines.push(`Cliente: ${selectedClient}`);
-  if (selectedSeller) lines.push(`Vendedor ID: ${selectedSeller}`);
-  lines.push('');
+  const checkPage = (needed: number) => {
+    if (y + needed > 270) {
+      doc.addPage();
+      y = 20;
+    }
+  };
+
+  // Title
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('JurisIA CRM - Relatorio Completo', pageWidth / 2, y, { align: 'center' });
+  y += 10;
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, pageWidth / 2, y, { align: 'center' });
+  y += 6;
+  doc.text(`Periodo: ${startDate || 'N/A'} a ${endDate || 'N/A'}`, pageWidth / 2, y, { align: 'center' });
+  y += 4;
+  if (selectedClient) {
+    doc.text(`Cliente: ${selectedClient}`, pageWidth / 2, y, { align: 'center' });
+    y += 4;
+  }
+  if (selectedSeller) {
+    doc.text(`Vendedor ID: ${selectedSeller}`, pageWidth / 2, y, { align: 'center' });
+    y += 4;
+  }
+  y += 6;
 
   // Summary
   const totalLeadsValue = leads.reduce((sum: number, l: Lead) => sum + (l.value || 0), 0);
   const totalCommissions = commissions.reduce((sum: number, c: Commission) => sum + (c.amount || 0), 0);
 
-  lines.push('===== RESUMO EXECUTIVO =====');
-  lines.push(`Total de Clientes: ${clients.length}`);
-  lines.push(`Total de Leads: ${leads.length}`);
-  lines.push(`Total de Comissões: ${commissions.length}`);
-  lines.push(`Valor Total de Leads: R$ ${totalLeadsValue.toFixed(2)}`);
-  lines.push(`Valor Total de Comissões: R$ ${totalCommissions.toFixed(2)}`);
-  lines.push('');
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Resumo Executivo', 14, y);
+  y += 8;
 
-  // Clients Section
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  const summaryItems = [
+    `Total de Clientes: ${clients.length}`,
+    `Total de Leads: ${leads.length}`,
+    `Total de Comissoes: ${commissions.length}`,
+    `Valor Total de Leads: R$ ${totalLeadsValue.toFixed(2)}`,
+    `Valor Total de Comissoes: R$ ${totalCommissions.toFixed(2)}`,
+  ];
+  summaryItems.forEach((item) => {
+    doc.text(item, 14, y);
+    y += 5;
+  });
+  y += 8;
+
+  // Clients table
   if (clients.length > 0) {
-    lines.push('===== CLIENTES =====');
-    lines.push(
-      ['Nome', 'Email', 'Telefone', 'Data Criação'].join('\t')
-    );
+    checkPage(20);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Clientes', 14, y);
+    y += 7;
+
+    // Table header
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setFillColor(68, 114, 196);
+    doc.setTextColor(255, 255, 255);
+    doc.rect(14, y - 4, pageWidth - 28, 6, 'F');
+    doc.text('Nome', 16, y);
+    doc.text('Email', 60, y);
+    doc.text('Telefone', 120, y);
+    doc.text('Data', 165, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+
     clients.forEach((client: Client) => {
-      lines.push(
-        [
-          client.name.substring(0, 25),
-          client.email.substring(0, 25),
-          client.phone || '-',
-          format(new Date(client.created_at), 'dd/MM/yyyy', { locale: ptBR }),
-        ].join('\t')
-      );
+      checkPage(6);
+      doc.text((client.name || '').substring(0, 20), 16, y);
+      doc.text((client.email || '').substring(0, 28), 60, y);
+      doc.text((client.phone || '-').substring(0, 18), 120, y);
+      try {
+        doc.text(format(new Date(client.created_at), 'dd/MM/yyyy', { locale: ptBR }), 165, y);
+      } catch {
+        doc.text('-', 165, y);
+      }
+      y += 5;
     });
-    lines.push('');
+    y += 8;
   }
 
-  // Leads Section
+  // Leads table
   if (leads.length > 0) {
-    lines.push('===== LEADS =====');
-    lines.push(
-      ['Lead', 'Cliente', 'Valor', 'Status', 'Data'].join('\t')
-    );
+    checkPage(20);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('Leads', 14, y);
+    y += 7;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setFillColor(197, 90, 17);
+    doc.setTextColor(255, 255, 255);
+    doc.rect(14, y - 4, pageWidth - 28, 6, 'F');
+    doc.text('Lead', 16, y);
+    doc.text('Cliente', 55, y);
+    doc.text('Valor', 100, y);
+    doc.text('Status', 135, y);
+    doc.text('Data', 165, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+
     leads.forEach((lead: Lead) => {
-      lines.push(
-        [
-          lead.title.substring(0, 15),
-          lead.client_name.substring(0, 15),
-          `R$ ${(lead.value || 0).toFixed(2)}`,
-          lead.status,
-          format(new Date(lead.created_at), 'dd/MM/yyyy', { locale: ptBR }),
-        ].join('\t')
-      );
+      checkPage(6);
+      doc.text((lead.title || '').substring(0, 18), 16, y);
+      doc.text((lead.client_name || '').substring(0, 18), 55, y);
+      doc.text(`R$ ${(lead.value || 0).toFixed(2)}`, 100, y);
+      doc.text((lead.status || '').substring(0, 12), 135, y);
+      try {
+        doc.text(format(new Date(lead.created_at), 'dd/MM/yyyy', { locale: ptBR }), 165, y);
+      } catch {
+        doc.text('-', 165, y);
+      }
+      y += 5;
     });
-    lines.push('');
+    y += 8;
   }
 
-  // Commissions Section
+  // Commissions table
   if (commissions.length > 0) {
-    lines.push('===== COMISSÕES =====');
-    lines.push(
-      ['Lead', 'Vendedor', 'Taxa %', 'Valor', 'Data'].join('\t')
-    );
+    checkPage(20);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('Comissoes', 14, y);
+    y += 7;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setFillColor(112, 173, 71);
+    doc.setTextColor(255, 255, 255);
+    doc.rect(14, y - 4, pageWidth - 28, 6, 'F');
+    doc.text('Lead', 16, y);
+    doc.text('Vendedor', 55, y);
+    doc.text('Taxa %', 105, y);
+    doc.text('Valor', 135, y);
+    doc.text('Data', 165, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+
     commissions.forEach((comm: Commission) => {
-      lines.push(
-        [
-          comm.lead_title.substring(0, 15),
-          comm.seller_name.substring(0, 15),
-          `${(comm.commission_rate || 0).toFixed(1)}%`,
-          `R$ ${(comm.amount || 0).toFixed(2)}`,
-          format(new Date(comm.created_at), 'dd/MM/yyyy', { locale: ptBR }),
-        ].join('\t')
-      );
+      checkPage(6);
+      doc.text((comm.lead_title || '').substring(0, 18), 16, y);
+      doc.text((comm.seller_name || '').substring(0, 18), 55, y);
+      doc.text(`${(comm.commission_rate || 0).toFixed(1)}%`, 105, y);
+      doc.text(`R$ ${(comm.amount || 0).toFixed(2)}`, 135, y);
+      try {
+        doc.text(format(new Date(comm.created_at), 'dd/MM/yyyy', { locale: ptBR }), 165, y);
+      } catch {
+        doc.text('-', 165, y);
+      }
+      y += 5;
     });
-    lines.push('');
   }
 
   // Footer
-  lines.push('Este é um documento confidencial. Gerado automaticamente pelo JurisIA CRM.');
+  checkPage(20);
+  y += 10;
+  doc.setFontSize(8);
+  doc.setTextColor(128, 128, 128);
+  doc.text('Este e um documento confidencial. Gerado automaticamente pelo JurisIA CRM.', pageWidth / 2, y, { align: 'center' });
 
-  return lines.join('\n');
+  // Get PDF as Uint8Array
+  const arrayBuffer = doc.output('arraybuffer');
+  return new Uint8Array(arrayBuffer);
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -133,25 +231,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     const body = await request.json();
     const { startDate, endDate, selectedClient, selectedSeller, clients, leads, commissions } = body;
 
-    // Generate PDF content as text
-    const pdfContent = generatePDFText(
+    const pdfBuffer = generatePDF(
       startDate,
       endDate,
       selectedClient,
       selectedSeller,
-      clients,
-      leads,
-      commissions
+      clients || [],
+      leads || [],
+      commissions || []
     );
 
-    // For now, return as text/plain instead of PDF to avoid font issues
-    // This is a temporary workaround - in production, use a proper PDF library
-    const buffer = Buffer.from(pdfContent, 'utf-8');
-
-    return new NextResponse(buffer, {
+    return new Response(pdfBuffer as unknown as BodyInit, {
       headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Disposition': `attachment; filename="relatorio_${Date.now()}.txt"`,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="relatorio_${Date.now()}.pdf"`,
+        'Content-Length': String(pdfBuffer.byteLength),
       },
     });
   } catch (error) {
