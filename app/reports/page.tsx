@@ -198,6 +198,21 @@ export default function ReportsPage() {
     }
   };
 
+  const forceDownload = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    // Small delay to ensure download starts before cleanup
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 250);
+  };
+
   const handleGeneratePDF = async () => {
     try {
       setGeneratingPdf(true);
@@ -220,19 +235,10 @@ export default function ReportsPage() {
         throw new Error(errData?.error || 'Falha ao gerar PDF');
       }
 
-      const blob = await response.blob();
-      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `relatorio_completo_${format(new Date(), 'dd_MM_yyyy')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 100);
+      const arrayBuffer = await response.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+      const filename = `relatorio_completo_${format(new Date(), 'dd_MM_yyyy')}.pdf`;
+      forceDownload(blob, filename);
 
       toast.success('PDF gerado com sucesso!');
     } catch (error) {
@@ -265,19 +271,10 @@ export default function ReportsPage() {
         throw new Error(errData?.error || 'Falha ao gerar Excel');
       }
 
-      const blob = await response.blob();
-      const excelBlob = new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = window.URL.createObjectURL(excelBlob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `relatorio_dados_${format(new Date(), 'dd_MM_yyyy')}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 100);
+      const arrayBuffer = await response.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const filename = `relatorio_dados_${format(new Date(), 'dd_MM_yyyy')}.xlsx`;
+      forceDownload(blob, filename);
 
       toast.success('Excel gerado com sucesso!');
     } catch (error) {

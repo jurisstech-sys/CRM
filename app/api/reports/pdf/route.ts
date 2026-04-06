@@ -241,11 +241,13 @@ export async function POST(request: NextRequest): Promise<Response> {
       commissions || []
     );
 
-    return new Response(pdfBuffer as unknown as BodyInit, {
+    return new NextResponse(Buffer.from(pdfBuffer), {
+      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="relatorio_${Date.now()}.pdf"`,
         'Content-Length': String(pdfBuffer.byteLength),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
   } catch (error) {

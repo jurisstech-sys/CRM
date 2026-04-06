@@ -12,8 +12,9 @@ import { supabase } from '@/lib/supabase'
 import { usePermissions } from '@/hooks/usePermissions'
 import { getRoleLabel } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts'
 
@@ -99,6 +100,8 @@ export default function DashboardPage() {
   const [funnelData, setFunnelData] = useState<{ name: string; value: number; fill: string }[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<string>('all')
+  const [comerciais, setComerciais] = useState<{ id: string; full_name: string }[]>([])
 
   const { isAdmin, userId, role, user, loading: permLoading } = usePermissions()
 
@@ -108,7 +111,38 @@ export default function DashboardPage() {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
       if (isAdmin) {
+        // ─── Fetch comerciais list for filter ───
+        const { data: comerciaisData } = await supabase
+          .from('users')
+          .select('id, full_name, email')
+          .order('full_name', { ascending: true })
+        if (comerciaisData) {
+          setComerciais(comerciaisData.map(u => ({
+            id: u.id,
+            full_name: u.full_name || u.email || 'Sem nome',
+          })))
+        }
+
+        const filterByUser = selectedUser !== 'all'
+
         // ─── ADMIN DASHBOARD ───
+        // Build queries with optional user filter
+        let leadsCountQ = supabase.from('leads').select('id', { count: 'exact', head: true })
+        let clientsCountQ = supabase.from('clients').select('id', { count: 'exact', head: true })
+        let wonQ = supabase.from('leads').select('id, value').eq('status', 'won').gte('updated_at', monthStart)
+        let commQ = supabase.from('commissions').select('amount, status').gte('created_at', monthStart)
+        let allLeadsQ = supabase.from('leads').select('id, status, value, assigned_to')
+        let activitiesQ = supabase.from('activities').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+
+        if (filterByUser) {
+          leadsCountQ = leadsCountQ.eq('assigned_to', selectedUser)
+          clientsCountQ = clientsCountQ.eq('created_by', selectedUser)
+          wonQ = wonQ.eq('assigned_to', selectedUser)
+          commQ = commQ.eq('user_id', selectedUser)
+          allLeadsQ = allLeadsQ.eq('assigned_to', selectedUser)
+          activitiesQ = activitiesQ.eq('assigned_to', selectedUser)
+        }
+
         const [
           leadsRes,
           clientsRes,
@@ -118,13 +152,13 @@ export default function DashboardPage() {
           allLeadsRes,
           activitiesRes,
         ] = await Promise.all([
-          supabase.from('leads').select('id', { count: 'exact', head: true }),
-          supabase.from('clients').select('id', { count: 'exact', head: true }),
+          leadsCountQ,
+          clientsCountQ,
           supabase.from('users').select('id', { count: 'exact', head: true }),
-          supabase.from('leads').select('id, value').eq('status', 'won').gte('updated_at', monthStart),
-          supabase.from('commissions').select('amount, status').gte('created_at', monthStart),
-          supabase.from('leads').select('id, status, value, assigned_to'),
-          supabase.from('activities').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          wonQ,
+          commQ,
+          allLeadsQ,
+          activitiesQ,
         ])
 
         const totalLeads = leadsRes.count || 0
@@ -307,7 +341,7 @@ export default function DashboardPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [isAdmin, userId])
+  }, [isAdmin, userId, selectedUser])
 
   useEffect(() => {
     if (!permLoading && userId) {
@@ -342,11 +376,26 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
             <p className="text-muted-foreground mt-1">
               {isAdmin
-                ? `Visão Global do CRM${displayName ? ` — ${displayName}` : ''}`
+                ? selectedUser !== 'all'
+                  ? `Filtrando por: ${comerciais.find(c => c.id === selectedUser)?.full_name || 'Usuário'}`
+                  : `Visão Global do CRM${displayName ? ` — ${displayName}` : ''}`
                 : `Meus KPIs${displayName ? ` — ${displayName}` : ''}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {isAdmin && comerciais.length > 0 && (
+              <Select value={selectedUser} onValueChange={(v) => { setSelectedUser(v); }}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Todos os Usuários" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Usuários</SelectItem>
+                  {comerciais.map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {role && (
               <Badge variant="outline" className="text-sm px-3 py-1">
                 {getRoleLabel(role)}

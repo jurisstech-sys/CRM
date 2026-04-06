@@ -233,10 +233,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     const buffer = Buffer.from(arrayBuffer);
 
     return new NextResponse(buffer, {
+      status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="relatorio_${Date.now()}.xlsx"`,
         'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
   } catch (error) {
