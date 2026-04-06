@@ -79,7 +79,7 @@ export default function PipelinePage() {
           expected_close_date: formData.expected_close_date || null,
           probability: formData.probability ? parseFloat(formData.probability) : 50,
           client_id: formData.client_id || null,
-          status: 'new',
+          status: 'backlog',
           currency: 'BRL',
           created_by: user.id,
           updated_by: user.id,

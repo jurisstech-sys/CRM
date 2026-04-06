@@ -36,18 +36,22 @@ interface PipelineData {
 }
 
 const PIPELINE_STAGES = [
-  { id: 'new', title: 'Novo', color: 'bg-blue-50' },
-  { id: 'qualified', title: 'Qualificado', color: 'bg-yellow-50' },
-  { id: 'proposal', title: 'Proposta', color: 'bg-orange-50' },
-  { id: 'won', title: 'Fechado', color: 'bg-green-50' },
+  { id: 'backlog', title: 'Backlog', color: 'bg-gray-500' },
+  { id: 'em_contato', title: 'Em Contato', color: 'bg-blue-500' },
+  { id: 'em_negociacao', title: 'Em Negociação', color: 'bg-yellow-500' },
+  { id: 'negociacao_fechada', title: 'Negociação Fechada', color: 'bg-green-500' },
+  { id: 'lead_nao_qualificado', title: 'Lead Não Qualificado', color: 'bg-red-500' },
+  { id: 'prospeccao_futura', title: 'Prospecção Futura', color: 'bg-purple-500' },
 ]
 
 export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads = false, currentUserId }: KanbanBoardProps) {
   const [leads, setLeads] = useState<PipelineData>({
-    new: [],
-    qualified: [],
-    proposal: [],
-    won: [],
+    backlog: [],
+    em_contato: [],
+    em_negociacao: [],
+    negociacao_fechada: [],
+    lead_nao_qualificado: [],
+    prospeccao_futura: [],
   })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -95,7 +99,8 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         return
       }
 
-      const response = await fetch('/api/leads?status=new,qualified,proposal,won', {
+      const stageIds = PIPELINE_STAGES.map(s => s.id).join(',')
+      const response = await fetch(`/api/leads?status=${stageIds}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -108,12 +113,8 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const result = await response.json()
       const data = result.leads
 
-      const grouped: PipelineData = {
-        new: [],
-        qualified: [],
-        proposal: [],
-        won: [],
-      }
+      const grouped: PipelineData = {}
+      PIPELINE_STAGES.forEach(s => { grouped[s.id] = [] })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data?.forEach((lead: any) => {
@@ -143,10 +144,9 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           client_email: lead.clients?.email,
         }
 
-        if (lead.status === 'new') grouped.new.push(mappedLead)
-        else if (lead.status === 'qualified') grouped.qualified.push(mappedLead)
-        else if (lead.status === 'proposal') grouped.proposal.push(mappedLead)
-        else if (lead.status === 'won') grouped.won.push(mappedLead)
+        if (grouped[lead.status]) {
+          grouped[lead.status].push(mappedLead)
+        }
       })
 
       setLeads(grouped)
@@ -309,13 +309,19 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
+      // When moving from backlog, assign the lead to the user who moved it
+      const updatePayload: Record<string, string> = { id: draggedLeadId, status: newStatus }
+      if (oldStatus === 'backlog' && newStatus !== 'backlog') {
+        updatePayload.assigned_to = currentUserId || ''
+      }
+
       const response = await fetch('/api/leads', {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ id: draggedLeadId, status: newStatus }),
+        body: JSON.stringify(updatePayload),
       })
 
       if (!response.ok) {
@@ -336,7 +342,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         newStatusTitle
       )
 
-      if (newStatus === 'won' && draggedLead.assigned_to && draggedLead.value) {
+      if (newStatus === 'negociacao_fechada' && draggedLead.assigned_to && draggedLead.value) {
         const commission = await createCommissionOnWin(
           draggedLeadId,
           draggedLead.assigned_to,
@@ -564,7 +570,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           </div>
 
           {/* Kanban Board */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 pb-8">
             {PIPELINE_STAGES.map((stage) => (
               <KanbanColumn
                 key={stage.id}

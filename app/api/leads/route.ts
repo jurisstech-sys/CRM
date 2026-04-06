@@ -59,9 +59,9 @@ export async function GET(request: NextRequest) {
       query = query.in('status', statuses);
     }
 
-    // Non-admin users only see their own leads
+    // Non-admin users see: all backlog leads + their own assigned leads
     if (!isAdmin) {
-      query = query.eq('created_by', user.id);
+      query = query.or(`status.eq.backlog,assigned_to.eq.${user.id}`);
     }
 
     const { data, error } = await query;

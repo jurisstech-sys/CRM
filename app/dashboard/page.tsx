@@ -28,23 +28,21 @@ const COLORS = {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  new: 'Novo',
-  contacted: 'Contatado',
-  qualified: 'Qualificado',
-  proposal: 'Proposta',
-  negotiation: 'Negociação',
-  won: 'Ganho',
-  lost: 'Perdido',
+  backlog: 'Backlog',
+  em_contato: 'Em Contato',
+  em_negociacao: 'Em Negociação',
+  negociacao_fechada: 'Negociação Fechada',
+  lead_nao_qualificado: 'Lead Não Qualificado',
+  prospeccao_futura: 'Prospecção Futura',
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  new: '#94a3b8',
-  contacted: COLORS.blue,
-  qualified: COLORS.greenSec,
-  proposal: COLORS.amber,
-  negotiation: '#8b5cf6',
-  won: COLORS.greenMain,
-  lost: COLORS.red,
+  backlog: '#6b7280',
+  em_contato: COLORS.blue,
+  em_negociacao: COLORS.amber,
+  negociacao_fechada: COLORS.greenMain,
+  lead_nao_qualificado: COLORS.red,
+  prospeccao_futura: '#a855f7',
 }
 
 interface GlobalStats {
@@ -129,7 +127,7 @@ export default function DashboardPage() {
         // Build queries with optional user filter
         let leadsCountQ = supabase.from('leads').select('id', { count: 'exact', head: true })
         let clientsCountQ = supabase.from('clients').select('id', { count: 'exact', head: true })
-        let wonQ = supabase.from('leads').select('id, value').eq('status', 'won').gte('updated_at', monthStart)
+        let wonQ = supabase.from('leads').select('id, value').eq('status', 'negociacao_fechada').gte('updated_at', monthStart)
         let commQ = supabase.from('commissions').select('amount, status').gte('created_at', monthStart)
         let allLeadsQ = supabase.from('leads').select('id, status, value, assigned_to')
         let activitiesQ = supabase.from('activities').select('id', { count: 'exact', head: true }).eq('status', 'pending')
@@ -172,7 +170,7 @@ export default function DashboardPage() {
         const allLeads = allLeadsRes.data || []
         const stageMap: Record<string, { count: number; value: number }> = {}
         allLeads.forEach(lead => {
-          const stage = lead.status || 'new'
+          const stage = lead.status || 'backlog'
           if (!stageMap[stage]) stageMap[stage] = { count: 0, value: 0 }
           stageMap[stage].count++
           stageMap[stage].value += lead.value || 0
@@ -185,7 +183,7 @@ export default function DashboardPage() {
         }))
 
         const activeLeads = allLeads.filter(l =>
-          l.status && !['won', 'lost'].includes(l.status)
+          l.status && !['negociacao_fechada', 'lead_nao_qualificado'].includes(l.status)
         ).length
 
         const conversionRate = totalLeads > 0 ? (closedThisMonth / totalLeads) * 100 : 0
@@ -207,7 +205,7 @@ export default function DashboardPage() {
         setStageCounts(stageCountsArr)
 
         // Build funnel data
-        const funnelStages = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won']
+        const funnelStages = ['backlog', 'em_contato', 'em_negociacao', 'negociacao_fechada', 'lead_nao_qualificado', 'prospeccao_futura']
         const funnel = funnelStages.map(stage => ({
           name: STAGE_LABELS[stage] || stage,
           value: stageMap[stage]?.count || 0,
@@ -233,11 +231,11 @@ export default function DashboardPage() {
               leadsInPipeline: 0,
             }
           }
-          if (lead.status === 'won') {
+          if (lead.status === 'negociacao_fechada') {
             rankingMap[lead.assigned_to].closed++
             rankingMap[lead.assigned_to].revenue += lead.value || 0
           }
-          if (lead.status && !['won', 'lost'].includes(lead.status)) {
+          if (lead.status && !['negociacao_fechada', 'lead_nao_qualificado'].includes(lead.status)) {
             rankingMap[lead.assigned_to].leadsInPipeline++
           }
         })
@@ -260,7 +258,7 @@ export default function DashboardPage() {
           myClientsRes,
         ] = await Promise.all([
           supabase.from('leads').select('id, status, value').eq('assigned_to', userId),
-          supabase.from('leads').select('id, value').eq('assigned_to', userId).eq('status', 'won').gte('updated_at', monthStart),
+          supabase.from('leads').select('id, value').eq('assigned_to', userId).eq('status', 'negociacao_fechada').gte('updated_at', monthStart),
           supabase.from('commissions').select('amount, status, created_at').eq('user_id', userId).gte('created_at', monthStart),
           supabase.from('activities').select('id', { count: 'exact', head: true }).eq('assigned_to', userId).eq('status', 'pending'),
           supabase.from('clients').select('id', { count: 'exact', head: true }).eq('created_by', userId),
@@ -275,7 +273,7 @@ export default function DashboardPage() {
 
         const stageMap: Record<string, { count: number; value: number }> = {}
         myLeads.forEach(lead => {
-          const stage = lead.status || 'new'
+          const stage = lead.status || 'backlog'
           if (!stageMap[stage]) stageMap[stage] = { count: 0, value: 0 }
           stageMap[stage].count++
           stageMap[stage].value += lead.value || 0
@@ -285,7 +283,7 @@ export default function DashboardPage() {
           stage, count: data.count, value: data.value,
         }))
 
-        const activeLeads = myLeads.filter(l => l.status && !['won', 'lost'].includes(l.status)).length
+        const activeLeads = myLeads.filter(l => l.status && !['negociacao_fechada', 'lead_nao_qualificado'].includes(l.status)).length
         const conversionRate = myLeads.length > 0 ? (closedThisMonth / myLeads.length) * 100 : 0
 
         setGlobalStats({
@@ -304,7 +302,7 @@ export default function DashboardPage() {
         setStageCounts(stageCountsArr)
 
         // Funnel for own leads
-        const funnelStages = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won']
+        const funnelStages = ['backlog', 'em_contato', 'em_negociacao', 'negociacao_fechada', 'lead_nao_qualificado', 'prospeccao_futura']
         const funnel = funnelStages.map(stage => ({
           name: STAGE_LABELS[stage] || stage,
           value: stageMap[stage]?.count || 0,
@@ -700,7 +698,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
-                {['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'].map(stage => {
+                {['backlog', 'em_contato', 'em_negociacao', 'negociacao_fechada', 'lead_nao_qualificado', 'prospeccao_futura'].map(stage => {
                   const data = stageCounts.find(s => s.stage === stage)
                   return (
                     <div

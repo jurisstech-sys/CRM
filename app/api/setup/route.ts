@@ -333,13 +333,12 @@ CREATE POLICY "All users can manage lead comments" ON lead_comments FOR ALL USIN
 `
 
 const DEFAULT_PIPELINE_STAGES = [
-  { name: 'New', description: 'New lead', position: 1, color: '#3B82F6', is_won_stage: false, is_lost_stage: false },
-  { name: 'Contacted', description: 'Lead contacted', position: 2, color: '#8B5CF6', is_won_stage: false, is_lost_stage: false },
-  { name: 'Qualified', description: 'Lead qualified', position: 3, color: '#EC4899', is_won_stage: false, is_lost_stage: false },
-  { name: 'Proposal', description: 'Proposal sent', position: 4, color: '#F59E0B', is_won_stage: false, is_lost_stage: false },
-  { name: 'Negotiation', description: 'In negotiation', position: 5, color: '#EF4444', is_won_stage: false, is_lost_stage: false },
-  { name: 'Won', description: 'Deal won', position: 6, color: '#10B981', is_won_stage: true, is_lost_stage: false },
-  { name: 'Lost', description: 'Deal lost', position: 7, color: '#6B7280', is_won_stage: false, is_lost_stage: true },
+  { name: 'Backlog', description: 'Leads em espera', position: 1, color: '#6B7280', is_won_stage: false, is_lost_stage: false },
+  { name: 'Em Contato', description: 'Em contato com o lead', position: 2, color: '#3B82F6', is_won_stage: false, is_lost_stage: false },
+  { name: 'Em Negociação', description: 'Lead em negociação', position: 3, color: '#EAB308', is_won_stage: false, is_lost_stage: false },
+  { name: 'Negociação Fechada', description: 'Negociação fechada com sucesso', position: 4, color: '#22C55E', is_won_stage: true, is_lost_stage: false },
+  { name: 'Lead Não Qualificado', description: 'Lead não qualificado', position: 5, color: '#EF4444', is_won_stage: false, is_lost_stage: true },
+  { name: 'Prospecção Futura', description: 'Lead para prospecção futura', position: 6, color: '#A855F7', is_won_stage: false, is_lost_stage: false },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

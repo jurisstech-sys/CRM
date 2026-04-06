@@ -27,13 +27,12 @@ export interface CommissionData {
  * These are used as fallback when no commission_config entry exists
  */
 const DEFAULT_STAGE_COMMISSION_RATES: Record<string, number> = {
-  new: 0,
-  contacted: 0,
-  qualified: 5,
-  proposal: 10,
-  negotiation: 15,
-  won: 20,
-  lost: 0,
+  backlog: 0,
+  em_contato: 0,
+  em_negociacao: 5,
+  negociacao_fechada: 20,
+  lead_nao_qualificado: 0,
+  prospeccao_futura: 0,
 }
 
 /**
@@ -102,8 +101,8 @@ export async function createCommissionOnWin(
   stage: string
 ): Promise<CommissionData | null> {
   try {
-    // Only create commission if moving to 'won' stage
-    if (stage !== 'won') {
+    // Only create commission if moving to 'negociacao_fechada' stage
+    if (stage !== 'negociacao_fechada') {
       return null
     }
 

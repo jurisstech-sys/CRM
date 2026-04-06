@@ -15,12 +15,12 @@ import { useRouter } from 'next/navigation'
 
 // Pipeline stages matching the CRM system
 const PIPELINE_STAGES = [
-  { key: 'new', label: 'Novo', color: '#94a3b8' },
-  { key: 'contacted', label: 'Contatado', color: '#111FA2' },
-  { key: 'qualified', label: 'Qualificado', color: '#408A71' },
-  { key: 'proposal', label: 'Proposta', color: '#FF9D00' },
-  { key: 'negotiation', label: 'Negociação', color: '#8b5cf6' },
-  { key: 'won', label: 'Ganho (Fechamento)', color: '#346739' },
+  { key: 'backlog', label: 'Backlog', color: '#6b7280' },
+  { key: 'em_contato', label: 'Em Contato', color: '#3b82f6' },
+  { key: 'em_negociacao', label: 'Em Negociação', color: '#eab308' },
+  { key: 'negociacao_fechada', label: 'Negociação Fechada', color: '#22c55e' },
+  { key: 'lead_nao_qualificado', label: 'Lead Não Qualificado', color: '#ef4444' },
+  { key: 'prospeccao_futura', label: 'Prospecção Futura', color: '#a855f7' },
 ]
 
 interface CommissionConfig {
@@ -119,8 +119,8 @@ export default function CommissionConfigPage() {
               }
               PIPELINE_STAGES.forEach(stage => {
                 if (configMap[user.id][stage.key] === undefined) {
-                  // Default: use user's commission_rate for 'won', 0 for others
-                  configMap[user.id][stage.key] = stage.key === 'won'
+                  // Default: use user's commission_rate for 'negociacao_fechada', 0 for others
+                  configMap[user.id][stage.key] = stage.key === 'negociacao_fechada'
                     ? (user.commission_rate || 0)
                     : 0
                 }
@@ -137,7 +137,7 @@ export default function CommissionConfigPage() {
         ;(usersData || []).forEach(user => {
           configMap[user.id] = {}
           PIPELINE_STAGES.forEach(stage => {
-            configMap[user.id][stage.key] = stage.key === 'won'
+            configMap[user.id][stage.key] = stage.key === 'negociacao_fechada'
               ? (user.commission_rate || 0)
               : 0
           })
@@ -213,7 +213,7 @@ export default function CommissionConfigPage() {
 
         // Also update each user's commission_rate in the users table (won stage rate)
         for (const user of users) {
-          const wonRate = configs[user.id]?.won ?? 0
+          const wonRate = configs[user.id]?.negociacao_fechada ?? 0
           if (wonRate !== user.commission_rate) {
             await supabase
               .from('users')
@@ -312,7 +312,7 @@ export default function CommissionConfigPage() {
                   A comissão é calculada automaticamente quando um lead avança para uma etapa.
                   O valor é: <strong>Valor do Deal × Percentual da Etapa ÷ 100</strong>.
                   A taxa aplicada é a configurada no momento da venda (não retroativa).
-                  A etapa &quot;Ganho&quot; é a principal para comissionamento em vendas fechadas.
+                  A etapa &quot;Negociação Fechada&quot; é a principal para comissionamento em vendas fechadas.
                 </p>
               </div>
             </div>
@@ -414,9 +414,9 @@ export default function CommissionConfigPage() {
                   <div className="mt-3 pt-3 border-t border-border/50">
                     <p className="text-xs text-muted-foreground">
                       Taxa atual no cadastro: <strong>{user.commission_rate || 0}%</strong>
-                      {configs[user.id]?.won !== undefined && configs[user.id]?.won !== user.commission_rate && (
+                      {configs[user.id]?.negociacao_fechada !== undefined && configs[user.id]?.negociacao_fechada !== user.commission_rate && (
                         <span className="text-amber-500 ml-2">
-                          → Será atualizada para {configs[user.id]?.won}% ao salvar
+                          → Será atualizada para {configs[user.id]?.negociacao_fechada}% ao salvar
                         </span>
                       )}
                     </p>
