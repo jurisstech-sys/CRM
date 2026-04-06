@@ -329,8 +329,8 @@ export default function ReportsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  {uniqueClients.filter(c => c && c.trim() !== '').map(client => (
-                    <SelectItem key={client} value={client}>
+                  {uniqueClients.filter(c => c && String(c).trim() !== '').map(client => (
+                    <SelectItem key={client} value={String(client)}>
                       {client}
                     </SelectItem>
                   ))}
@@ -347,8 +347,8 @@ export default function ReportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
-                    {sellers.map(seller => (
-                      <SelectItem key={seller.id} value={seller.id}>
+                    {sellers.filter(s => s.id && String(s.id).trim() !== '').map(seller => (
+                      <SelectItem key={seller.id} value={String(seller.id)}>
                         {seller.name}
                       </SelectItem>
                     ))}

@@ -34,23 +34,21 @@ interface LeadModalProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'new', label: 'Novo' },
-  { value: 'contacted', label: 'Contactado' },
-  { value: 'qualified', label: 'Qualificado' },
-  { value: 'proposal', label: 'Proposta' },
-  { value: 'negotiation', label: 'Negociação' },
-  { value: 'won', label: 'Fechado (Ganho)' },
-  { value: 'lost', label: 'Perdido' },
+  { value: 'backlog', label: 'Backlog' },
+  { value: 'em_contato', label: 'Em Contato' },
+  { value: 'em_negociacao', label: 'Em Negociação' },
+  { value: 'negociacao_fechada', label: 'Negociação Fechada' },
+  { value: 'lead_nao_qualificado', label: 'Lead Não Qualificado' },
+  { value: 'prospeccao_futura', label: 'Prospecção Futura' },
 ]
 
 const statusColors: Record<string, string> = {
-  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  contacted: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  qualified: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-  proposal: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-  negotiation: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  won: 'bg-green-500/20 text-green-300 border-green-500/30',
-  lost: 'bg-red-500/20 text-red-300 border-red-500/30',
+  backlog: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  em_contato: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  em_negociacao: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  negociacao_fechada: 'bg-green-500/20 text-green-300 border-green-500/30',
+  lead_nao_qualificado: 'bg-red-500/20 text-red-300 border-red-500/30',
+  prospeccao_futura: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
 }
 
 export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }: LeadModalProps) {

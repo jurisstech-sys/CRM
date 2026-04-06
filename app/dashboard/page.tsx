@@ -388,8 +388,8 @@ export default function DashboardPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os Usuários</SelectItem>
-                  {comerciais.map(u => (
-                    <SelectItem key={u.id} value={u.id}>{u.full_name}</SelectItem>
+                  {comerciais.filter(u => u.id && String(u.id).trim() !== '').map(u => (
+                    <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

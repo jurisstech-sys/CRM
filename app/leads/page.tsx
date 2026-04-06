@@ -6,7 +6,7 @@ import { LeadUploader, Lead } from '@/components/leads/LeadUploader';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
-import { Upload, Trash2, AlertCircle } from 'lucide-react';
+import { Upload, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
@@ -20,6 +20,7 @@ export default function LeadsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importedCount, setImportedCount] = useState(0);
+  const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleDataParsed = useCallback((parsedLeads: Lead[], uploadedFileName: string) => {
     const leadsWithIndex = parsedLeads.map((lead, index) => ({
@@ -30,6 +31,7 @@ export default function LeadsPage() {
     setFileName(uploadedFileName);
     setImportProgress(0);
     setImportedCount(0);
+    setImportResult(null);
   }, []);
 
   const removeLeadFromPreview = (rowIndex: number) => {
@@ -64,8 +66,12 @@ export default function LeadsPage() {
     }
 
     setIsImporting(true);
-    setImportProgress(0);
+    setImportProgress(5);
     setImportedCount(0);
+    setImportResult(null);
+
+    // Keep track of total leads for progress calculation
+    const totalLeads = leads.length;
 
     try {
       // Importa em lotes de até 2000 leads
@@ -81,6 +87,15 @@ export default function LeadsPage() {
 
         console.log(`[LeadsPage] Enviando batch ${Math.floor(i / batchSize) + 1}: ${cleanedBatch.length} leads`);
 
+        // Animate progress while waiting
+        const progressStart = (i / totalLeads) * 90;
+        const progressEnd = ((i + batch.length) / totalLeads) * 90;
+        setImportProgress(progressStart + 5);
+
+        const progressInterval = setInterval(() => {
+          setImportProgress(prev => Math.min(prev + 2, progressEnd + 5));
+        }, 300);
+
         const response = await fetch('/api/leads/import', {
           method: 'POST',
           headers: {
@@ -93,6 +108,8 @@ export default function LeadsPage() {
           }),
         });
 
+        clearInterval(progressInterval);
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -102,7 +119,7 @@ export default function LeadsPage() {
 
         totalImported += data.count;
         setImportedCount(totalImported);
-        setImportProgress(Math.min(((i + batch.length) / leads.length) * 100, 100));
+        setImportProgress(progressEnd + 5);
 
         console.log(`[LeadsPage] Batch importado: ${data.count} leads. Total: ${totalImported}`);
 
@@ -112,21 +129,17 @@ export default function LeadsPage() {
         }
       }
 
+      setImportProgress(100);
       toast.success(`✅ ${totalImported} leads importados com sucesso!`);
+      setImportResult({ success: true, message: `${totalImported} leads importados com sucesso! Acesse o Pipeline para visualizá-los no Backlog.` });
       
-      // Limpa os dados após importação bem-sucedida
+      // Limpa os dados do preview após importação bem-sucedida
       setLeads([]);
       setFileName('');
-      setImportProgress(100);
-      
-      // Reset para novo upload após 2 segundos
-      setTimeout(() => {
-        setImportProgress(0);
-        setImportedCount(0);
-      }, 2000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       toast.error(`❌ Erro ao importar: ${errorMessage}`);
+      setImportResult({ success: false, message: errorMessage });
       console.error('[LeadsPage] Import error:', error);
     } finally {
       setIsImporting(false);
@@ -158,6 +171,65 @@ export default function LeadsPage() {
             isLoading={isImporting}
           />
         </Card>
+
+        {/* Progress bar and result - always visible during/after import */}
+        {(isImporting || importResult) && (
+          <Card className="p-6 space-y-4">
+            {/* Progress bar */}
+            {(isImporting || importProgress > 0) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {isImporting ? '⏳ Importando leads...' : importProgress >= 100 ? '✅ Importação concluída!' : 'Importação'}
+                  </h3>
+                  {isImporting && (
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {importedCount} importados
+                    </span>
+                  )}
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ease-out rounded-full ${
+                      importProgress >= 100 ? 'bg-green-500' : 'bg-blue-600'
+                    }`}
+                    style={{ width: `${importProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {Math.round(importProgress)}% concluído
+                </p>
+              </div>
+            )}
+
+            {/* Result message */}
+            {importResult && (
+              <div className={`flex items-start gap-3 p-4 rounded-lg border ${
+                importResult.success
+                  ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+                  : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+              }`}>
+                {importResult.success ? (
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                )}
+                <div>
+                  <p className={`text-sm font-medium ${
+                    importResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'
+                  }`}>
+                    {importResult.message}
+                  </p>
+                  {importResult.success && (
+                    <a href="/pipeline" className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">
+                      → Ir para o Pipeline (Kanban)
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Preview dos dados */}
         {leads.length > 0 && (
@@ -228,29 +300,6 @@ export default function LeadsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400 px-4">
                 Mostrando 10 de {leads.length} leads. Todos serão importados.
               </p>
-            )}
-
-            {/* Barra de progresso de importação */}
-            {isImporting && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Importando leads...
-                  </h3>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {importedCount} / {leads.length}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-full transition-all duration-300 ease-out"
-                    style={{ width: `${importProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {Math.round(importProgress)}% concluído
-                </p>
-              </div>
             )}
 
             {/* Botão de importação */}
