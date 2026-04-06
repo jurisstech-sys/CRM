@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     const isAdmin = userData?.role === 'admin' || userData?.role === 'super_admin';
 
-    // Build query
+    // Build query - use service role to bypass RLS
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status');
 
@@ -59,10 +59,9 @@ export async function GET(request: NextRequest) {
       query = query.in('status', statuses);
     }
 
-    // Non-admin users see: all backlog leads + their own assigned leads
-    if (!isAdmin) {
-      query = query.or(`status.eq.backlog,assigned_to.eq.${user.id}`);
-    }
+    // IMPORTANT: Show ALL leads for ALL authenticated users
+    // The service role key already bypasses RLS
+    // Previously non-admins were filtered, but this caused leads to disappear
 
     const { data, error } = await query;
 
@@ -71,6 +70,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log(`[Leads API] Returning ${data?.length || 0} leads for user ${user.email} (isAdmin: ${isAdmin})`);
     return NextResponse.json({ leads: data || [], isAdmin });
   } catch (error) {
     console.error('[Leads API] Error:', error);
