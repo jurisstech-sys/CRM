@@ -422,16 +422,42 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       setUpdatingId(updatedLead.id)
 
       let originalLead: Lead | null = null
-      for (const [, statusLeads] of Object.entries(leads)) {
+      let oldStatus = ''
+      for (const [status, statusLeads] of Object.entries(leads)) {
         const found = statusLeads.find((l) => l.id === updatedLead.id)
         if (found) {
           originalLead = found
+          oldStatus = status
           break
         }
       }
 
+      const newStatus = updatedLead.status
+      const statusChanged = oldStatus !== '' && oldStatus !== newStatus
+
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
+
+      // Build update payload — include status so column changes are persisted
+      const updatePayload: Record<string, unknown> = {
+        id: updatedLead.id,
+        title: updatedLead.title,
+        description: updatedLead.description,
+        value: updatedLead.value,
+        expected_close_date: updatedLead.expected_close_date,
+        probability: updatedLead.probability,
+        email1: updatedLead.email1,
+        email2: updatedLead.email2,
+        email3: updatedLead.email3,
+        phone1: updatedLead.phone1,
+        phone2: updatedLead.phone2,
+        status: newStatus,
+      }
+
+      // When moving from backlog, assign the lead to the user who moved it
+      if (statusChanged && oldStatus === 'backlog' && newStatus !== 'backlog') {
+        updatePayload.assigned_to = currentUserId || ''
+      }
 
       const response = await fetch('/api/leads', {
         method: 'PATCH',
@@ -439,19 +465,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: updatedLead.id,
-          title: updatedLead.title,
-          description: updatedLead.description,
-          value: updatedLead.value,
-          expected_close_date: updatedLead.expected_close_date,
-          probability: updatedLead.probability,
-          email1: updatedLead.email1,
-          email2: updatedLead.email2,
-          email3: updatedLead.email3,
-          phone1: updatedLead.phone1,
-          phone2: updatedLead.phone2,
-        }),
+        body: JSON.stringify(updatePayload),
       })
 
       if (!response.ok) throw new Error('Erro ao atualizar')
@@ -464,26 +478,58 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       if (originalLead?.value !== updatedLead.value) {
         changes.push(`valor: R$ ${originalLead?.value} → R$ ${updatedLead.value}`)
       }
+      if (statusChanged) {
+        const oldStatusTitle = PIPELINE_STAGES.find((s) => s.id === oldStatus)?.title || oldStatus
+        const newStatusTitle = PIPELINE_STAGES.find((s) => s.id === newStatus)?.title || newStatus
+        changes.push(`status: "${oldStatusTitle}" → "${newStatusTitle}"`)
+      }
 
       await logActivity(
-        'update',
+        statusChanged ? 'move' : 'update',
         'lead',
         updatedLead.id,
-        `Lead "${updatedLead.title}" foi atualizado${changes.length > 0 ? ': ' + changes.join(', ') : ''}`,
-        updatedLead.title
+        `Lead "${updatedLead.title}" foi ${statusChanged ? 'movido' : 'atualizado'}${changes.length > 0 ? ': ' + changes.join(', ') : ''}`,
+        updatedLead.title,
+        statusChanged ? (PIPELINE_STAGES.find((s) => s.id === oldStatus)?.title || oldStatus) : undefined,
+        statusChanged ? (PIPELINE_STAGES.find((s) => s.id === newStatus)?.title || newStatus) : undefined
       )
 
-      // Update local state
+      // Handle commission on win via modal status change
+      if (statusChanged && newStatus === 'negociacao_fechada' && updatedLead.assigned_to && updatedLead.value) {
+        const commission = await createCommissionOnWin(
+          updatedLead.id,
+          updatedLead.assigned_to,
+          updatedLead.value,
+          newStatus
+        )
+        if (commission) {
+          toast.success(
+            `Lead movido para Negociação Fechada - Comissão de R$ ${commission.amount.toFixed(2)} registrada!`
+          )
+        } else {
+          toast.success('Lead atualizado com sucesso')
+        }
+      } else {
+        toast.success('Lead atualizado com sucesso')
+      }
+
+      // Update local state — move lead between columns if status changed
       const newLeads = { ...leads }
-      for (const status in newLeads) {
-        const index = newLeads[status].findIndex((l) => l.id === updatedLead.id)
-        if (index !== -1) {
-          newLeads[status][index] = updatedLead
+      if (statusChanged && oldStatus && PIPELINE_STAGES.find((s) => s.id === newStatus)) {
+        // Remove from old column
+        newLeads[oldStatus] = newLeads[oldStatus].filter((l) => l.id !== updatedLead.id)
+        // Add to new column
+        newLeads[newStatus] = [updatedLead, ...newLeads[newStatus]]
+      } else {
+        // Just update in place
+        for (const status in newLeads) {
+          const index = newLeads[status].findIndex((l) => l.id === updatedLead.id)
+          if (index !== -1) {
+            newLeads[status][index] = updatedLead
+          }
         }
       }
       setLeads(newLeads)
-
-      toast.success('Lead atualizado com sucesso')
     } catch (error) {
       console.error('Error updating lead:', error)
       toast.error('Erro ao atualizar lead')
