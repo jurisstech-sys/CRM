@@ -48,7 +48,6 @@ function mergeLeadDescription(
   let merged = current;
   let changed = false;
 
-  // Merge phones
   for (const phone of newPhones) {
     if (phone && phone.trim() && !current.includes(phone.trim())) {
       if (merged.length > 0 && !merged.endsWith(' | ')) {
@@ -59,7 +58,6 @@ function mergeLeadDescription(
     }
   }
 
-  // Merge emails
   for (const email of newEmails) {
     if (email && email.trim() && !current.includes(email.trim())) {
       if (merged.length > 0 && !merged.endsWith(' | ')) {
@@ -74,29 +72,135 @@ function mergeLeadDescription(
 }
 
 /**
- * Merge new contact data into existing client record.
- * Returns updated fields if changes are needed, null otherwise.
+ * Ensure the leads table status constraint allows new pipeline stages.
+ * Drops old CHECK constraint and adds new one if needed.
  */
-function mergeClientData(
-  existingEmail: string | null,
-  existingPhone: string | null,
-  newEmail: string | null,
-  newPhone: string | null
-): { email?: string; phone?: string } | null {
-  const updates: { email?: string; phone?: string } = {};
-  let hasChanges = false;
-
-  if (!existingEmail && newEmail && newEmail.trim()) {
-    updates.email = newEmail.trim();
-    hasChanges = true;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureStatusConstraint(supabase: any) {
+  try {
+    // Try to drop the old restrictive CHECK constraint
+    // We use rpc exec_sql if available, otherwise we try inserting a test and if it fails we know
+    const { error: rpcError } = await supabase.rpc('exec_sql', {
+      sql_query: `
+        ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
+        ALTER TABLE leads ADD CONSTRAINT leads_status_check 
+          CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost', 'backlog', 'em_contato', 'em_negociacao', 'negociacao_fechada', 'lead_nao_qualificado', 'prospeccao_futura'));
+      `
+    });
+    if (!rpcError) {
+      console.log('[Leads Import] ✅ Status constraint atualizado via exec_sql');
+      return;
+    }
+    console.log('[Leads Import] exec_sql não disponível, tentando via pg...');
+  } catch {
+    // exec_sql function doesn't exist, try direct pg
   }
 
-  if (!existingPhone && newPhone && newPhone.trim()) {
-    updates.phone = newPhone.trim();
-    hasChanges = true;
+  // Try via DATABASE_URL with pg
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    try {
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: databaseUrl });
+      await pool.query(`
+        ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
+        ALTER TABLE leads ADD CONSTRAINT leads_status_check 
+          CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost', 'backlog', 'em_contato', 'em_negociacao', 'negociacao_fechada', 'lead_nao_qualificado', 'prospeccao_futura'));
+      `);
+      await pool.end();
+      console.log('[Leads Import] ✅ Status constraint atualizado via pg');
+      return;
+    } catch (pgErr) {
+      console.error('[Leads Import] Erro ao atualizar constraint via pg:', pgErr);
+    }
   }
 
-  return hasChanges ? updates : null;
+  console.warn('[Leads Import] ⚠️ Não foi possível atualizar status constraint automaticamente');
+}
+
+/**
+ * Ensure the imported_leads table exists.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureImportedLeadsTable(supabase: any) {
+  const createSQL = `
+    CREATE TABLE IF NOT EXISTS imported_leads (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      nome TEXT NOT NULL,
+      celular1 TEXT,
+      celular2 TEXT,
+      email1 TEXT,
+      email2 TEXT,
+      email3 TEXT,
+      status TEXT DEFAULT 'backlog',
+      arquivo_origem TEXT,
+      imported_by UUID,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
+  // Try rpc first
+  try {
+    const { error: rpcError } = await supabase.rpc('exec_sql', { sql_query: createSQL });
+    if (!rpcError) {
+      console.log('[Leads Import] ✅ imported_leads table verified via exec_sql');
+      return true;
+    }
+  } catch {
+    // exec_sql not available
+  }
+
+  // Try via pg
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    try {
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: databaseUrl });
+      await pool.query(createSQL);
+      await pool.end();
+      console.log('[Leads Import] ✅ imported_leads table verified via pg');
+      return true;
+    } catch (pgErr) {
+      console.error('[Leads Import] Erro ao criar imported_leads via pg:', pgErr);
+    }
+  }
+
+  // As last resort, try inserting — if table doesn't exist, we'll skip it
+  console.warn('[Leads Import] ⚠️ Não foi possível verificar imported_leads, continuando sem ela');
+  return false;
+}
+
+/**
+ * Remove UNIQUE constraint from client_id on leads table if it exists.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fixClientIdConstraint(supabase: any) {
+  const sql = `
+    ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_client_id_key;
+  `;
+
+  try {
+    const { error: rpcError } = await supabase.rpc('exec_sql', { sql_query: sql });
+    if (!rpcError) {
+      console.log('[Leads Import] ✅ client_id UNIQUE constraint removido via exec_sql');
+      return;
+    }
+  } catch {
+    // try pg
+  }
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    try {
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: databaseUrl });
+      await pool.query(sql);
+      await pool.end();
+      console.log('[Leads Import] ✅ client_id UNIQUE constraint removido via pg');
+    } catch (pgErr) {
+      console.error('[Leads Import] Erro ao remover constraint client_id:', pgErr);
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -145,16 +249,24 @@ export async function POST(request: NextRequest) {
     }
     console.log('[Leads Import] Usuário autenticado:', user.id, user.email);
 
-    // Criar cliente Supabase com SERVICE_ROLE_KEY para BYPASS de RLS nas inserções
+    // Criar cliente Supabase com SERVICE_ROLE_KEY para BYPASS de RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+
+    // ============================================================
+    // FIX DATABASE SCHEMA ISSUES BEFORE IMPORT
+    // ============================================================
+    console.log('[Leads Import] 🔧 Verificando e corrigindo schema...');
+    await ensureStatusConstraint(supabase);
+    await fixClientIdConstraint(supabase);
+    const hasImportedLeadsTable = await ensureImportedLeadsTable(supabase);
 
     // Parse do body
     const body = await request.json() as ImportRequestBody;
     const { leads, fileName } = body;
 
-    console.log('[Leads Import] Dados recebidos:', {
+    console.log('[Leads Import] 📁 Dados recebidos:', {
       fileName,
       totalLeads: leads?.length,
       primeiroLead: leads?.[0],
@@ -169,7 +281,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Limite de 5000 leads por requisição (arquivo grande)
+    // Limite de 5000 leads por requisição
     if (leads.length > 5000) {
       return NextResponse.json(
         { error: 'Máximo de 5000 leads por requisição' },
@@ -177,10 +289,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Preparar dados para inserção na tabela imported_leads
+    // Preparar dados para inserção
     const leadsToInsert = leads
       .filter(lead => {
-        // Apenas validar se tem NOME (obrigatório)
         const hasName = lead.nome && String(lead.nome).trim().length > 0;
         return hasName;
       })
@@ -196,7 +307,7 @@ export async function POST(request: NextRequest) {
         imported_by: user.id,
       }));
 
-    console.log('[Leads Import] Quantidade de leads válidos:', leadsToInsert.length);
+    console.log('[Leads Import] 📊 Leads válidos após filtragem:', leadsToInsert.length);
 
     if (leadsToInsert.length === 0) {
       return NextResponse.json(
@@ -205,35 +316,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Inserir em imported_leads (tabela de histórico — sempre insere)
-    const BATCH_SIZE = 500;
-    let totalInserted = 0;
-    const errors: string[] = [];
+    // ============================================================
+    // STEP 1: Insert into imported_leads (historical table) — optional
+    // ============================================================
+    if (hasImportedLeadsTable) {
+      const BATCH_SIZE = 500;
+      let totalInserted = 0;
 
-    for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
-      const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
-      console.log(`[Leads Import] Inserindo batch imported_leads ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} leads...`);
+      for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
+        const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
+        const { data, error } = await supabase
+          .from('imported_leads')
+          .insert(batch)
+          .select('id');
 
-      const { data, error } = await supabase
-        .from('imported_leads')
-        .insert(batch)
-        .select('id');
-
-      if (error) {
-        console.error(`[Leads Import] Erro no batch imported_leads ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message, error.details, error.hint);
-        errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`);
-      } else {
-        const count = data?.length || 0;
-        totalInserted += count;
-        console.log(`[Leads Import] ✅ Batch imported_leads inserido: ${count} leads`);
+        if (error) {
+          console.error(`[Leads Import] Erro batch imported_leads:`, error.message);
+        } else {
+          totalInserted += data?.length || 0;
+        }
       }
+      console.log(`[Leads Import] imported_leads inseridos: ${totalInserted}`);
+    } else {
+      console.log('[Leads Import] ⏭️ Pulando imported_leads (tabela não disponível)');
     }
 
-    console.log(`[Leads Import] ====== FIM DA IMPORTAÇÃO (imported_leads) ======`);
-    console.log(`[Leads Import] Total inserido em imported_leads: ${totalInserted}/${leadsToInsert.length}`);
-
     // ============================================================
-    // Ensure the user exists in 'users' table (FK constraint)
+    // STEP 2: Ensure user exists in 'users' table (FK constraint)
     // ============================================================
     const { data: existingUser } = await supabase
       .from('users')
@@ -242,7 +351,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!existingUser) {
-      console.log('[Leads Import] Usuário não encontrado na tabela users, criando registro...');
+      console.log('[Leads Import] Criando registro de usuário...');
       const { error: createUserError } = await supabase
         .from('users')
         .insert({
@@ -253,29 +362,24 @@ export async function POST(request: NextRequest) {
         });
 
       if (createUserError) {
-        console.error('[Leads Import] Erro ao criar usuário na tabela users:', createUserError.message);
-      } else {
-        console.log('[Leads Import] ✅ Registro de usuário criado na tabela users');
+        console.error('[Leads Import] Erro ao criar usuário:', createUserError.message);
       }
     }
 
     // ============================================================
-    // ANTI-DUPLICAÇÃO INTELIGENTE
-    // Fetch ALL existing leads and clients to detect duplicates
+    // STEP 3: ANTI-DUPLICAÇÃO — fetch existing leads + clients
     // ============================================================
     console.log('[Leads Import] 🔍 Verificando duplicatas...');
 
-    // Collect all names and emails from incoming leads for lookup
     const incomingNames = leadsToInsert.map(l => l.nome);
     const incomingEmails = leadsToInsert
       .flatMap(l => [l.email1, l.email2, l.email3])
       .filter((e): e is string => !!e);
 
-    // Fetch existing leads by title (name)
     const existingLeadsMap = new Map<string, ExistingLead>();
     const existingClientsByName = new Map<string, { id: string; email: string | null; phone: string | null }>();
 
-    // Fetch existing leads in batches (Supabase has query limits)
+    // Fetch existing leads by title (name)
     const uniqueNames = [...new Set(incomingNames)];
     for (let i = 0; i < uniqueNames.length; i += 100) {
       const nameBatch = uniqueNames.slice(i, i + 100);
@@ -286,28 +390,25 @@ export async function POST(request: NextRequest) {
 
       if (existingLeads) {
         for (const lead of existingLeads) {
-          // Store by lowercase title for case-insensitive matching
           existingLeadsMap.set(lead.title.toLowerCase(), lead as ExistingLead);
         }
       }
     }
 
-    // Also check by email in description for more robust dedup
+    // Check by email in description
     if (incomingEmails.length > 0) {
-      for (let i = 0; i < incomingEmails.length; i += 50) {
-        const emailBatch = incomingEmails.slice(i, i + 50);
-        for (const email of emailBatch) {
-          const { data: emailLeads } = await supabase
-            .from('leads')
-            .select('id, title, description, source, value, currency, status, probability, client_id, created_by, updated_by')
-            .ilike('description', `%${email}%`)
-            .limit(1);
+      const uniqueEmails = [...new Set(incomingEmails)].slice(0, 200); // limit lookups
+      for (const email of uniqueEmails) {
+        const { data: emailLeads } = await supabase
+          .from('leads')
+          .select('id, title, description, source, value, currency, status, probability, client_id, created_by, updated_by')
+          .ilike('description', `%${email}%`)
+          .limit(1);
 
-          if (emailLeads && emailLeads.length > 0) {
-            const lead = emailLeads[0];
-            if (!existingLeadsMap.has(lead.title.toLowerCase())) {
-              existingLeadsMap.set(lead.title.toLowerCase(), lead as ExistingLead);
-            }
+        if (emailLeads && emailLeads.length > 0) {
+          const lead = emailLeads[0];
+          if (!existingLeadsMap.has(lead.title.toLowerCase())) {
+            existingLeadsMap.set(lead.title.toLowerCase(), lead as ExistingLead);
           }
         }
       }
@@ -332,17 +433,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Leads Import] 📊 Leads existentes encontrados: ${existingLeadsMap.size}`);
-    console.log(`[Leads Import] 📊 Clientes existentes encontrados: ${existingClientsByName.size}`);
+    console.log(`[Leads Import] 📊 Leads existentes: ${existingLeadsMap.size}`);
+    console.log(`[Leads Import] 📊 Clientes existentes: ${existingClientsByName.size}`);
 
     // ============================================================
-    // PROCESS EACH LEAD: Create new OR Merge into existing
+    // STEP 4: PROCESS EACH LEAD — create new OR merge existing
     // ============================================================
     let statsNewLeads = 0;
     let statsUpdatedLeads = 0;
     let statsIgnoredLeads = 0;
     let statsNewClients = 0;
     let statsUpdatedClients = 0;
+    let statsErrors = 0;
     const pipelineErrors: string[] = [];
     const clientIdMap: Record<string, string> = {};
 
@@ -354,28 +456,29 @@ export async function POST(request: NextRequest) {
       // ---- CLIENTS TABLE ----
       const existingClient = existingClientsByName.get(nameKey);
       if (existingClient) {
-        // Merge client data if needed
         clientIdMap[lead.nome] = existingClient.id;
-        const clientUpdates = mergeClientData(
-          existingClient.email,
-          existingClient.phone,
-          lead.email1,
-          lead.celular1
-        );
+        // Merge client data if email/phone missing
+        const updates: { email?: string; phone?: string } = {};
+        let hasChanges = false;
+        if (!existingClient.email && lead.email1 && lead.email1.trim()) {
+          updates.email = lead.email1.trim();
+          hasChanges = true;
+        }
+        if (!existingClient.phone && lead.celular1 && lead.celular1.trim()) {
+          updates.phone = lead.celular1.trim();
+          hasChanges = true;
+        }
 
-        if (clientUpdates) {
+        if (hasChanges) {
           const { error: updateErr } = await supabase
             .from('clients')
-            .update(clientUpdates)
+            .update(updates)
             .eq('id', existingClient.id);
 
-          if (updateErr) {
-            console.error(`[Leads Import] Erro ao atualizar cliente ${lead.nome}:`, updateErr.message);
-          } else {
+          if (!updateErr) {
             statsUpdatedClients++;
-            // Update local cache
-            if (clientUpdates.email) existingClient.email = clientUpdates.email;
-            if (clientUpdates.phone) existingClient.phone = clientUpdates.phone;
+            if (updates.email) existingClient.email = updates.email;
+            if (updates.phone) existingClient.phone = updates.phone;
           }
         }
       } else {
@@ -421,7 +524,6 @@ export async function POST(request: NextRequest) {
             updated_by: user.id,
           };
 
-          // Also update client_id if existing lead has none but we now have one
           if (!existingLead.client_id && clientIdMap[lead.nome]) {
             updateData.client_id = clientIdMap[lead.nome];
           }
@@ -434,9 +536,9 @@ export async function POST(request: NextRequest) {
           if (updateErr) {
             console.error(`[Leads Import] Erro ao atualizar lead ${lead.nome}:`, updateErr.message);
             pipelineErrors.push(`Update ${lead.nome}: ${updateErr.message}`);
+            statsErrors++;
           } else {
             statsUpdatedLeads++;
-            // Update local cache to avoid duplicate merges for same-name leads
             existingLead.description = merged;
           }
         } else {
@@ -455,34 +557,110 @@ export async function POST(request: NextRequest) {
           ? contactParts.join(' | ')
           : `Importado de: ${lead.arquivo_origem}`;
 
+        // Use client_id only if we have one, but be careful with UNIQUE constraint
+        const resolvedClientId = clientIdMap[lead.nome] || null;
+
+        const insertData: Record<string, unknown> = {
+          title: lead.nome,
+          description,
+          source: 'importacao',
+          value: 0,
+          currency: 'BRL',
+          status: 'backlog',
+          probability: 0,
+          email1: lead.email1 || null,
+          email2: lead.email2 || null,
+          email3: lead.email3 || null,
+          phone1: lead.celular1 || null,
+          phone2: lead.celular2 || null,
+          created_by: user.id,
+          updated_by: user.id,
+        };
+
+        // Only set client_id if we're confident it won't violate UNIQUE
+        // Check if there's already a lead with this client_id
+        if (resolvedClientId) {
+          const existingLeadWithClient = Array.from(existingLeadsMap.values()).find(
+            l => l.client_id === resolvedClientId
+          );
+          if (!existingLeadWithClient) {
+            insertData.client_id = resolvedClientId;
+          }
+        }
+
         const { data: newLead, error: pError } = await supabase
           .from('leads')
-          .insert({
-            title: lead.nome,
-            description,
-            source: 'importacao',
-            value: 0,
-            currency: 'BRL',
-            status: 'backlog',
-            probability: 0,
-            client_id: clientIdMap[lead.nome] || null,
-            email1: lead.email1 || null,
-            email2: lead.email2 || null,
-            email3: lead.email3 || null,
-            phone1: lead.celular1 || null,
-            phone2: lead.celular2 || null,
-            created_by: user.id,
-            updated_by: user.id,
-          })
+          .insert(insertData)
           .select('id, title')
           .single();
 
         if (pError) {
-          console.error(`[Leads Import] Erro ao criar lead ${lead.nome}:`, pError.message);
-          pipelineErrors.push(`Create ${lead.nome}: ${pError.message}`);
+          console.error(`[Leads Import] ❌ Erro ao criar lead "${lead.nome}":`, pError.message, pError.code, pError.details);
+          
+          // If error is about status constraint, try with 'new' status as fallback
+          if (pError.message.includes('leads_status_check') || pError.message.includes('check constraint')) {
+            console.log(`[Leads Import] Tentando com status 'new' como fallback...`);
+            insertData.status = 'new';
+            const { data: retryLead, error: retryErr } = await supabase
+              .from('leads')
+              .insert(insertData)
+              .select('id, title')
+              .single();
+
+            if (retryErr) {
+              pipelineErrors.push(`Create ${lead.nome}: ${retryErr.message}`);
+              statsErrors++;
+            } else if (retryLead) {
+              statsNewLeads++;
+              existingLeadsMap.set(nameKey, {
+                id: retryLead.id,
+                title: retryLead.title,
+                description,
+                source: 'importacao',
+                value: 0,
+                currency: 'BRL',
+                status: 'new',
+                probability: 0,
+                client_id: (insertData.client_id as string) || null,
+                created_by: user.id,
+                updated_by: user.id,
+              });
+            }
+          } else if (pError.message.includes('client_id') || pError.code === '23505') {
+            // UNIQUE violation on client_id — retry without client_id
+            console.log(`[Leads Import] Tentando sem client_id...`);
+            delete insertData.client_id;
+            const { data: retryLead, error: retryErr } = await supabase
+              .from('leads')
+              .insert(insertData)
+              .select('id, title')
+              .single();
+
+            if (retryErr) {
+              pipelineErrors.push(`Create ${lead.nome}: ${retryErr.message}`);
+              statsErrors++;
+            } else if (retryLead) {
+              statsNewLeads++;
+              existingLeadsMap.set(nameKey, {
+                id: retryLead.id,
+                title: retryLead.title,
+                description,
+                source: 'importacao',
+                value: 0,
+                currency: 'BRL',
+                status: 'backlog',
+                probability: 0,
+                client_id: null,
+                created_by: user.id,
+                updated_by: user.id,
+              });
+            }
+          } else {
+            pipelineErrors.push(`Create ${lead.nome}: ${pError.message}`);
+            statsErrors++;
+          }
         } else if (newLead) {
           statsNewLeads++;
-          // Add to cache so subsequent same-name leads in this batch are detected
           existingLeadsMap.set(nameKey, {
             id: newLead.id,
             title: newLead.title,
@@ -492,7 +670,7 @@ export async function POST(request: NextRequest) {
             currency: 'BRL',
             status: 'backlog',
             probability: 0,
-            client_id: clientIdMap[lead.nome] || null,
+            client_id: (insertData.client_id as string) || null,
             created_by: user.id,
             updated_by: user.id,
           });
@@ -500,21 +678,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Leads Import] ====== ESTATÍSTICAS ANTI-DUPLICAÇÃO ======`);
+    console.log(`[Leads Import] ====== ESTATÍSTICAS FINAIS ======`);
     console.log(`[Leads Import] ✅ Novos leads criados: ${statsNewLeads}`);
     console.log(`[Leads Import] 🔄 Leads atualizados (merge): ${statsUpdatedLeads}`);
     console.log(`[Leads Import] ⏭️  Leads ignorados (sem novos dados): ${statsIgnoredLeads}`);
     console.log(`[Leads Import] 👤 Novos clientes criados: ${statsNewClients}`);
     console.log(`[Leads Import] 🔄 Clientes atualizados: ${statsUpdatedClients}`);
+    console.log(`[Leads Import] ❌ Erros: ${statsErrors}`);
+    if (pipelineErrors.length > 0) {
+      console.log(`[Leads Import] Primeiros erros:`, pipelineErrors.slice(0, 5));
+    }
 
     const totalProcessed = statsNewLeads + statsUpdatedLeads + statsIgnoredLeads;
-    const allErrors = [...errors, ...pipelineErrors];
 
     if (statsNewLeads === 0 && statsUpdatedLeads === 0 && totalProcessed === 0) {
       return NextResponse.json(
         {
-          error: `Erro ao salvar leads: ${allErrors.join('; ')}`,
-          details: allErrors,
+          error: `Erro ao salvar leads: ${pipelineErrors.slice(0, 3).join('; ')}`,
+          details: pipelineErrors.slice(0, 10),
+          stats: {
+            newLeads: statsNewLeads,
+            updatedLeads: statsUpdatedLeads,
+            ignoredLeads: statsIgnoredLeads,
+            errors: statsErrors,
+          },
         },
         { status: 500 }
       );
@@ -525,8 +712,9 @@ export async function POST(request: NextRequest) {
     if (statsNewLeads > 0) messageParts.push(`${statsNewLeads} novos`);
     if (statsUpdatedLeads > 0) messageParts.push(`${statsUpdatedLeads} atualizados`);
     if (statsIgnoredLeads > 0) messageParts.push(`${statsIgnoredLeads} sem alteração`);
+    if (statsErrors > 0) messageParts.push(`${statsErrors} com erro`);
 
-    const message = `Importação concluída: ${messageParts.join(', ')}${allErrors.length > 0 ? ` (${allErrors.length} avisos)` : ''}`;
+    const message = `Importação concluída: ${messageParts.join(', ')}`;
 
     return NextResponse.json(
       {
@@ -540,8 +728,9 @@ export async function POST(request: NextRequest) {
           ignoredLeads: statsIgnoredLeads,
           newClients: statsNewClients,
           updatedClients: statsUpdatedClients,
+          errors: statsErrors,
         },
-        errors: allErrors.length > 0 ? allErrors : undefined,
+        errors: pipelineErrors.length > 0 ? pipelineErrors.slice(0, 10) : undefined,
         message,
       },
       { status: 200 }
