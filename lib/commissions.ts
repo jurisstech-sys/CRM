@@ -1,6 +1,7 @@
 /**
  * Commission Calculation Module
  * Handles automatic commission calculation based on lead status transitions
+ * Now supports per-user, per-stage configurable rates via commission_config table
  */
 
 import { supabase } from './supabase'
@@ -22,10 +23,10 @@ export interface CommissionData {
 }
 
 /**
- * Commission rates by pipeline stage (percentage of deal value)
- * These can be overridden by individual user commission_rate
+ * Default commission rates by pipeline stage (percentage of deal value)
+ * These are used as fallback when no commission_config entry exists
  */
-const STAGE_COMMISSION_RATES: Record<string, number> = {
+const DEFAULT_STAGE_COMMISSION_RATES: Record<string, number> = {
   new: 0,
   contacted: 0,
   qualified: 5,
@@ -33,6 +34,42 @@ const STAGE_COMMISSION_RATES: Record<string, number> = {
   negotiation: 15,
   won: 20,
   lost: 0,
+}
+
+/**
+ * Fetch commission rate from commission_config table for a specific user and stage
+ * Falls back to user's commission_rate, then to default stage rate
+ */
+async function getCommissionRate(userId: string, stage: string): Promise<number> {
+  try {
+    // Try to fetch from commission_config table
+    const { data: configData, error: configError } = await supabase
+      .from('commission_config')
+      .select('percentage')
+      .eq('user_id', userId)
+      .eq('stage', stage)
+      .single()
+
+    if (!configError && configData) {
+      return configData.percentage
+    }
+
+    // Fallback: fetch user's commission_rate
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('commission_rate')
+      .eq('id', userId)
+      .single()
+
+    if (!userError && userData?.commission_rate) {
+      return userData.commission_rate
+    }
+
+    // Final fallback: default stage rate
+    return DEFAULT_STAGE_COMMISSION_RATES[stage] ?? 0
+  } catch {
+    return DEFAULT_STAGE_COMMISSION_RATES[stage] ?? 0
+  }
 }
 
 /**
@@ -48,18 +85,15 @@ export function calculateCommission(
   userCommissionRate?: number
 ): number {
   if (!dealValue || dealValue <= 0) return 0
-  
+
   // Use user's commission rate if provided, otherwise use stage-based rate
-  const rate = userCommissionRate ?? (STAGE_COMMISSION_RATES[stage] ?? 0)
+  const rate = userCommissionRate ?? (DEFAULT_STAGE_COMMISSION_RATES[stage] ?? 0)
   return (dealValue * rate) / 100
 }
 
 /**
  * Create a commission record when a lead is moved to "won" status
- * @param leadId - The ID of the lead
- * @param userId - The ID of the user who owns the lead
- * @param dealValue - The value of the deal
- * @param stage - The current pipeline stage
+ * Now fetches rate from commission_config table first
  */
 export async function createCommissionOnWin(
   leadId: string,
@@ -73,20 +107,9 @@ export async function createCommissionOnWin(
       return null
     }
 
-    // Fetch user's commission rate
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('commission_rate')
-      .eq('id', userId)
-      .single()
-
-    if (userError) {
-      console.error('Error fetching user commission rate:', userError)
-      return null
-    }
-
-    const userCommissionRate = userData?.commission_rate ?? 0
-    const commissionAmount = calculateCommission(dealValue, stage, userCommissionRate)
+    // Fetch commission rate from config table (with fallbacks)
+    const commissionRate = await getCommissionRate(userId, stage)
+    const commissionAmount = calculateCommission(dealValue, stage, commissionRate)
 
     // Create commission record
     const { data: commissionData, error: commissionError } = await supabase
@@ -95,11 +118,11 @@ export async function createCommissionOnWin(
         lead_id: leadId,
         user_id: userId,
         amount: commissionAmount,
-        percentage: userCommissionRate,
+        percentage: commissionRate,
         currency: 'BRL',
         status: 'pending',
         calculation_method: 'percentage',
-        notes: `Commission for lead ${leadId} - ${(userCommissionRate * 100).toFixed(1)}% of R$ ${dealValue.toFixed(2)}`,
+        notes: `Comissão para lead ${leadId} - ${commissionRate}% de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dealValue)}`,
       })
       .select()
       .single()
@@ -118,8 +141,8 @@ export async function createCommissionOnWin(
         'create',
         'commission',
         commissionData.id || leadId,
-        `Comissão de R$ ${commissionAmount.toFixed(2)} foi criada para o lead ${leadId}`,
-        `Comissão ${(userCommissionRate * 100).toFixed(1)}%`
+        `Comissão de R$ ${commissionAmount.toFixed(2)} criada (${commissionRate}% de R$ ${dealValue.toFixed(2)})`,
+        `Comissão ${commissionRate}%`
       )
     }
 
@@ -132,14 +155,12 @@ export async function createCommissionOnWin(
 
 /**
  * Update user's monthly commission total
- * @param userId - The ID of the user
  */
 export async function updateUserMonthlyCommission(userId: string): Promise<void> {
   try {
-    // Calculate total commissions for current month
     const currentMonth = new Date()
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
-    
+
     const { data: commissionData, error: fetchError } = await supabase
       .from('commissions')
       .select('amount')
@@ -154,7 +175,6 @@ export async function updateUserMonthlyCommission(userId: string): Promise<void>
 
     const totalCommission = commissionData?.reduce((sum: number, comm: any) => sum + (comm.amount || 0), 0) || 0
 
-    // Update user's monthly total
     const { error: updateError } = await supabase
       .from('users')
       .update({ monthly_commission_total: totalCommission })
@@ -170,8 +190,6 @@ export async function updateUserMonthlyCommission(userId: string): Promise<void>
 
 /**
  * Get user's commission history for a given month
- * @param userId - The ID of the user
- * @param month - The month (YYYY-MM format)
  */
 export async function getUserCommissionsByMonth(
   userId: string,
@@ -204,7 +222,6 @@ export async function getUserCommissionsByMonth(
 
 /**
  * Get all commissions for a given month
- * @param month - The month (YYYY-MM format)
  */
 export async function getAllCommissionsByMonth(month: string): Promise<CommissionData[]> {
   try {
@@ -233,9 +250,6 @@ export async function getAllCommissionsByMonth(month: string): Promise<Commissio
 
 /**
  * Update commission status (e.g., mark as paid)
- * @param commissionId - The ID of the commission
- * @param status - The new status
- * @param paymentDate - The payment date (optional)
  */
 export async function updateCommissionStatus(
   commissionId: string,

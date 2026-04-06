@@ -191,6 +191,21 @@ CREATE INDEX IF NOT EXISTS idx_commissions_user_id ON commissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_commissions_status ON commissions(status);
 CREATE INDEX IF NOT EXISTS idx_commissions_payment_date ON commissions(payment_date);
 
+-- Commission Config Table (Configuração de Comissões por Usuário e Etapa)
+CREATE TABLE IF NOT EXISTS commission_config (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  stage VARCHAR(50) NOT NULL,
+  percentage DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, stage)
+);
+
+CREATE INDEX IF NOT EXISTS idx_commission_config_user_id ON commission_config(user_id);
+CREATE INDEX IF NOT EXISTS idx_commission_config_stage ON commission_config(stage);
+
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_type ON audit_logs(entity_type);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
@@ -234,6 +249,10 @@ DROP TRIGGER IF EXISTS pipeline_stages_updated_at ON pipeline_stages;
 CREATE TRIGGER pipeline_stages_updated_at BEFORE UPDATE ON pipeline_stages
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS commission_config_updated_at ON commission_config;
+CREATE TRIGGER commission_config_updated_at BEFORE UPDATE ON commission_config
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
@@ -242,6 +261,7 @@ ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_stages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commission_config ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Users can view all users" ON users;
@@ -287,6 +307,10 @@ CREATE POLICY "Users can view commissions" ON commissions FOR SELECT USING (
 CREATE POLICY "Users can view audit logs" ON audit_logs FOR SELECT USING (
   user_id = auth.uid()
 );
+
+-- Commission config policies
+DROP POLICY IF EXISTS "Admin can manage commission config" ON commission_config;
+CREATE POLICY "Admin can manage commission config" ON commission_config FOR ALL USING (TRUE);
 `
 
 const DEFAULT_PIPELINE_STAGES = [

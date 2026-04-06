@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Home, Kanban, Upload, DollarSign, BarChart3, Clock, UserCog } from 'lucide-react'
+import { Users, Home, Kanban, Upload, DollarSign, BarChart3, Clock, UserCog, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermissions } from '@/hooks/usePermissions'
 
@@ -16,6 +16,7 @@ export function Sidebar() {
     { href: '/pipeline', label: 'Pipeline', icon: Kanban, adminOnly: false },
     { href: '/leads', label: 'Importar Leads', icon: Upload, adminOnly: false },
     { href: '/commissions', label: 'Comissões', icon: DollarSign, adminOnly: false },
+    { href: '/commissions/config', label: 'Config. Comissões', icon: Settings, adminOnly: true },
     { href: '/reports', label: 'Relatórios', icon: BarChart3, adminOnly: false },
     { href: '/activities', label: 'Atividades', icon: Clock, adminOnly: false },
     { href: '/users', label: 'Usuários', icon: UserCog, adminOnly: true },
