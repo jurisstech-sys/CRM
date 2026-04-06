@@ -4,12 +4,17 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   DndContext,
   closestCorners,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragStartEvent,
+  CollisionDetection,
+  UniqueIdentifier,
 } from '@dnd-kit/core'
 import {
   sortableKeyboardCoordinates,
@@ -64,6 +69,34 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   // Modal state
   const [modalLead, setModalLead] = useState<Lead | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Active drag state
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
+
+  // Custom collision detection: prioritize droppable columns, then fall back to closest corners
+  const customCollisionDetection: CollisionDetection = useCallback((args) => {
+    // First try pointerWithin - best for dropping into columns
+    const pointerCollisions = pointerWithin(args)
+    if (pointerCollisions.length > 0) {
+      // Prefer column collisions over card collisions
+      const columnCollision = pointerCollisions.find(c => 
+        PIPELINE_STAGES.some(s => s.id === c.id)
+      )
+      if (columnCollision) return [columnCollision]
+      return pointerCollisions
+    }
+    // Fall back to rectIntersection
+    const rectCollisions = rectIntersection(args)
+    if (rectCollisions.length > 0) {
+      const columnCollision = rectCollisions.find(c => 
+        PIPELINE_STAGES.some(s => s.id === c.id)
+      )
+      if (columnCollision) return [columnCollision]
+      return rectCollisions
+    }
+    // Last resort
+    return closestCorners(args)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -552,8 +585,13 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragEnd={handleDragEnd}
+        collisionDetection={customCollisionDetection}
+        onDragStart={(event: DragStartEvent) => setActiveId(event.active.id)}
+        onDragEnd={(event: DragEndEvent) => {
+          setActiveId(null)
+          handleDragEnd(event)
+        }}
+        onDragCancel={() => setActiveId(null)}
       >
         <div className="space-y-4">
           {/* Header */}

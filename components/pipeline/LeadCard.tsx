@@ -73,23 +73,21 @@ export function LeadCard({ lead, onDelete, onClick, isSelected, onSelect, showCh
     : null
 
   const statusColors: Record<string, string> = {
-    new: 'bg-blue-100 text-blue-800',
-    contacted: 'bg-cyan-100 text-cyan-800',
-    qualified: 'bg-yellow-100 text-yellow-800',
-    proposal: 'bg-orange-100 text-orange-800',
-    negotiation: 'bg-purple-100 text-purple-800',
-    won: 'bg-green-100 text-green-800',
-    lost: 'bg-red-100 text-red-800',
+    backlog: 'bg-gray-500/20 text-gray-300',
+    em_contato: 'bg-blue-500/20 text-blue-300',
+    em_negociacao: 'bg-yellow-500/20 text-yellow-300',
+    negociacao_fechada: 'bg-green-500/20 text-green-300',
+    lead_nao_qualificado: 'bg-red-500/20 text-red-300',
+    prospeccao_futura: 'bg-purple-500/20 text-purple-300',
   }
 
   const statusLabels: Record<string, string> = {
-    new: 'Novo',
-    contacted: 'Contactado',
-    qualified: 'Qualificado',
-    proposal: 'Proposta',
-    negotiation: 'Negociação',
-    won: 'Fechado',
-    lost: 'Perdido',
+    backlog: 'Backlog',
+    em_contato: 'Em Contato',
+    em_negociacao: 'Em Negociação',
+    negociacao_fechada: 'Negociação Fechada',
+    lead_nao_qualificado: 'Lead Não Qualificado',
+    prospeccao_futura: 'Prospecção Futura',
   }
 
   // Get display emails/phones from separate fields or fallback to description

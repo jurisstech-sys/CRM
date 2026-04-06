@@ -106,7 +106,7 @@ interface SortableLeadCardProps {
 }
 
 function SortableLeadCard({ lead, onDelete, onLeadClick, isSelected, onSelectLead, showCheckbox }: SortableLeadCardProps) {
-  const { setNodeRef, transform, transition, isDragging } = useSortable({
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: lead.id,
     data: {
       type: 'LeadCard',
@@ -120,10 +120,11 @@ function SortableLeadCard({ lead, onDelete, onLeadClick, isSelected, onSelectLea
       : undefined,
     transition,
     opacity: isDragging ? 0.5 : 1,
+    cursor: isDragging ? 'grabbing' : 'grab',
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="w-full">
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="w-full touch-none">
       <LeadCard
         lead={lead}
         onDelete={onDelete}
