@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
     const { data: users, error } = await supabase
       .from('users')
       .select('id, full_name, email, role, commission_rate')
+      .is('deleted_at', null)
       .order('full_name', { ascending: true });
 
     if (error) {

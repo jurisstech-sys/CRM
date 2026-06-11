@@ -15,6 +15,8 @@ export interface Lead {
   description?: string | null
   source?: string | null
   value?: number | null
+  custom_value?: number | null
+  plan_id?: string | null
   currency?: string
   status: string
   assigned_to?: string | null

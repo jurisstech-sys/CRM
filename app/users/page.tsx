@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Loader2, Plus, Pencil, Shield, ShieldAlert } from 'lucide-react';
+import { Loader2, Plus, Pencil, Shield, ShieldAlert, KeyRound, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -32,6 +32,16 @@ export default function UsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
 
+  // Reset password dialog state
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetUser, setResetUser] = useState<UserRecord | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+
+  // Delete dialog state
+  const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Form state
   const [formEmail, setFormEmail] = useState('');
   const [formPassword, setFormPassword] = useState('');
@@ -45,6 +55,7 @@ export default function UsersPage() {
       const { data, error } = await supabase
         .from('users')
         .select('id, email, full_name, role, created_at')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -151,6 +162,83 @@ export default function UsersPage() {
       toast.error(error instanceof Error ? error.message : 'Erro ao salvar usuário');
     } finally {
       setFormSaving(false);
+    }
+  };
+
+  const openResetDialog = (user: UserRecord) => {
+    setResetUser(user);
+    setResetPassword('');
+    setResetDialogOpen(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetUser) return;
+    if (!resetPassword || resetPassword.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+    try {
+      setResetSaving(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        return;
+      }
+      const response = await fetch('/api/users/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId: resetUser.id, newPassword: resetPassword }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao redefinir senha');
+      }
+      toast.success('Senha redefinida com sucesso!');
+      setResetDialogOpen(false);
+      setResetUser(null);
+      setResetPassword('');
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao redefinir senha');
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUser) return;
+    try {
+      setDeleting(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        return;
+      }
+      const response = await fetch('/api/users/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId: deleteUser.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao excluir usuário');
+      }
+      toast.success('Usuário excluído com sucesso!');
+      setDeleteUser(null);
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao excluir usuário');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -306,6 +394,23 @@ export default function UsersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openResetDialog(user)}
+                              title="Redefinir senha"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDeleteUser(user)}
+                              title="Excluir usuário"
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950/40"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -317,6 +422,78 @@ export default function UsersPage() {
           )}
         </Card>
       </div>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={resetDialogOpen} onOpenChange={(open) => { setResetDialogOpen(open); if (!open) { setResetUser(null); setResetPassword(''); } }}>
+        <DialogContent className="bg-slate-900 border-gray-700">
+          <DialogHeader>
+            <DialogTitle>Redefinir Senha</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <p className="text-sm text-gray-400">
+              Defina uma nova senha para <span className="font-medium text-white">{resetUser?.full_name || resetUser?.email}</span>.
+            </p>
+            <div>
+              <label className="text-sm font-medium">Nova Senha *</label>
+              <Input
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="mt-1"
+              />
+            </div>
+            <Button
+              onClick={handleResetPassword}
+              disabled={resetSaving}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              {resetSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Redefinindo...
+                </>
+              ) : (
+                'Redefinir Senha'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteUser} onOpenChange={(open) => { if (!open) setDeleteUser(null); }}>
+        <DialogContent className="bg-slate-900 border-gray-700">
+          <DialogHeader>
+            <DialogTitle>Excluir Usuário</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <p className="text-sm text-gray-400">
+              Tem certeza que deseja excluir <span className="font-medium text-white">{deleteUser?.full_name || deleteUser?.email}</span>?
+              O usuário perderá o acesso ao sistema, mas seus registros históricos serão preservados.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setDeleteUser(null)} disabled={deleting}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleDeleteUser}
+                disabled={deleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  'Excluir'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

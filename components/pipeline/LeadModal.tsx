@@ -20,9 +20,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Trash2, Save, X, Mail, Phone, User, DollarSign, Calendar, Percent, ArrowRightLeft } from 'lucide-react'
+import { Trash2, Save, X, Mail, Phone, User, DollarSign, Calendar, Percent, ArrowRightLeft, Package } from 'lucide-react'
 import type { Lead } from './LeadCard'
 import { LeadTimeline } from './LeadTimeline'
+import { LeadActivityHistory } from './LeadActivityHistory'
+import { supabase } from '@/lib/supabase'
+
+interface Plan {
+  id: string
+  name: string
+  price: number | null
+  is_custom: boolean
+}
+
+const NO_PLAN = '__no_plan__'
 
 interface LeadModalProps {
   lead: Lead | null
@@ -54,6 +65,7 @@ const statusColors: Record<string, string> = {
 export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }: LeadModalProps) {
   const [editData, setEditData] = useState<Lead | null>(null)
   const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('details')
+  const [plans, setPlans] = useState<Plan[]>([])
 
   useEffect(() => {
     if (lead) {
@@ -62,7 +74,46 @@ export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }
     }
   }, [lead])
 
+  // Load active plans for the plan selector
+  useEffect(() => {
+    const loadPlans = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) return
+        const res = await fetch('/api/plans', { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) {
+          const data = await res.json()
+          setPlans(data.plans || [])
+        }
+      } catch (e) {
+        console.error('Erro ao carregar planos:', e)
+      }
+    }
+    if (isOpen) loadPlans()
+  }, [isOpen])
+
   if (!editData) return null
+
+  const selectedPlan = plans.find((p) => p.id === editData.plan_id) || null
+  // Value is locked (auto-filled) for standard plans; editable for custom (Enterprise) or no plan
+  const valueLocked = !!selectedPlan && !selectedPlan.is_custom
+
+  const handlePlanChange = (planId: string) => {
+    if (planId === NO_PLAN) {
+      setEditData({ ...editData, plan_id: null })
+      return
+    }
+    const plan = plans.find((p) => p.id === planId)
+    if (!plan) return
+    if (plan.is_custom) {
+      // Enterprise / personalizado: keep current value, enable manual editing
+      setEditData({ ...editData, plan_id: plan.id, custom_value: editData.value ?? null })
+    } else {
+      // Standard plan: auto-fill value from plan price
+      setEditData({ ...editData, plan_id: plan.id, value: plan.price, custom_value: null })
+    }
+  }
 
   const handleSave = () => {
     if (!editData.title.trim()) {
@@ -224,19 +275,63 @@ export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }
               </div>
             </div>
 
+            {/* Plano */}
+            <div>
+              <label className="text-sm font-medium text-slate-400 flex items-center gap-2 mb-1">
+                <Package className="w-4 h-4" /> Plano
+              </label>
+              <Select value={editData.plan_id || NO_PLAN} onValueChange={handlePlanChange}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectValue placeholder="Selecione um plano" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value={NO_PLAN} className="text-white hover:bg-slate-700 focus:bg-slate-700">
+                    Sem plano
+                  </SelectItem>
+                  {plans.map((p) => (
+                    <SelectItem
+                      key={p.id}
+                      value={p.id}
+                      className="text-white hover:bg-slate-700 focus:bg-slate-700"
+                    >
+                      {p.name}
+                      {p.is_custom
+                        ? ' (personalizado)'
+                        : p.price != null
+                          ? ` — ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}`
+                          : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedPlan?.is_custom && (
+                <p className="text-xs text-amber-400 mt-1">
+                  Plano personalizado: informe o valor manualmente no campo abaixo.
+                </p>
+              )}
+            </div>
+
             {/* Value + Date + Probability */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
                   <DollarSign className="w-4 h-4" /> Valor
+                  {valueLocked && <span className="text-xs text-slate-500">(do plano)</span>}
                 </label>
                 <Input
                   type="number"
-                  value={editData.value || ''}
-                  onChange={(e) =>
-                    setEditData({ ...editData, value: e.target.value ? parseFloat(e.target.value) : null })
-                  }
-                  className="bg-slate-800 border-slate-700 text-white mt-1"
+                  value={editData.value ?? ''}
+                  disabled={valueLocked}
+                  onChange={(e) => {
+                    const v = e.target.value ? parseFloat(e.target.value) : null
+                    setEditData({
+                      ...editData,
+                      value: v,
+                      // keep custom_value in sync when editing a custom plan
+                      custom_value: selectedPlan?.is_custom ? v : editData.custom_value,
+                    })
+                  }}
+                  className="bg-slate-800 border-slate-700 text-white mt-1 disabled:opacity-60 disabled:cursor-not-allowed"
                   placeholder="0.00"
                 />
               </div>
@@ -285,7 +380,8 @@ export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }
 
         {/* Timeline Tab */}
         {activeTab === 'timeline' && editData.id && (
-          <div className="mt-2">
+          <div className="mt-2 space-y-6">
+            <LeadActivityHistory leadId={editData.id} />
             <LeadTimeline leadId={editData.id} />
           </div>
         )}

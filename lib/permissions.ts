@@ -53,7 +53,10 @@ export function canManageUsers(user: CRMUser | null): boolean {
 export function getRoleLabel(role: UserRole | string): string {
   const labels: Record<string, string> = {
     admin: 'Administrador',
+    super_admin: 'Administrador',
     comercial: 'Comercial',
+    user: 'Comercial',
+    viewer: 'Visualizador',
   }
   return labels[role] || role
 }

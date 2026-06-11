@@ -1,26 +1,70 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/app-layout';
 import { LeadUploader, Lead } from '@/components/leads/LeadUploader';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
-import { Upload, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Upload, Trash2, AlertCircle, CheckCircle, Loader2, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { usePermissions } from '@/hooks/usePermissions';
+import { getRoleLabel } from '@/lib/permissions';
 
 interface LeadPreviewData extends Lead {
   _rowIndex: number;
 }
 
+interface CommercialUser {
+  id: string;
+  full_name: string | null;
+  email: string;
+  role: string;
+}
+
+const UNASSIGNED = '__unassigned__';
+
 export default function LeadsPage() {
+  const router = useRouter();
+  const { isAdmin, loading: permLoading } = usePermissions();
   const [leads, setLeads] = useState<LeadPreviewData[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importedCount, setImportedCount] = useState(0);
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [commercials, setCommercials] = useState<CommercialUser[]>([]);
+  const [assignedTo, setAssignedTo] = useState<string>(UNASSIGNED);
+
+  // Block non-admins from importing
+  useEffect(() => {
+    if (!permLoading && !isAdmin) {
+      toast.error('Acesso negado. Apenas administradores podem importar leads.');
+      router.push('/pipeline');
+    }
+  }, [permLoading, isAdmin, router]);
+
+  // Load list of users (commercial destinations) for admins
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+        const res = await fetch('/api/users/list', { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          setCommercials(data.users || []);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar usuários:', e);
+      }
+    };
+    if (isAdmin) loadUsers();
+  }, [isAdmin]);
 
   const handleDataParsed = useCallback((parsedLeads: Lead[], uploadedFileName: string) => {
     const leadsWithIndex = parsedLeads.map((lead, index) => ({
@@ -105,6 +149,7 @@ export default function LeadsPage() {
           body: JSON.stringify({
             leads: cleanedBatch,
             fileName,
+            assignedTo: assignedTo === UNASSIGNED ? null : assignedTo,
           }),
         });
 
@@ -146,6 +191,16 @@ export default function LeadsPage() {
     }
   };
 
+  if (permLoading || !isAdmin) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -170,6 +225,30 @@ export default function LeadsPage() {
             onDataParsed={handleDataParsed}
             isLoading={isImporting}
           />
+
+          {/* Comercial de destino */}
+          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white mb-2">
+              <UserCheck className="h-4 w-4 text-blue-600" />
+              Atribuir leads ao comercial (opcional)
+            </label>
+            <Select value={assignedTo} onValueChange={setAssignedTo} disabled={isImporting}>
+              <SelectTrigger className="max-w-md">
+                <SelectValue placeholder="Sem atribuição (ficam no Backlog sem responsável)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Sem atribuição (Backlog)</SelectItem>
+                {commercials.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {(u.full_name || u.email)} — {getRoleLabel(u.role)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Se um comercial for selecionado, todos os leads importados serão atribuídos a ele. Caso contrário, ficam disponíveis no Backlog.
+            </p>
+          </div>
         </Card>
 
         {/* Progress bar and result - always visible during/after import */}
