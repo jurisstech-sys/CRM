@@ -25,9 +25,48 @@ import { Loader2, Plus, Trash2, CheckSquare, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
-import { createCommissionOnWin } from '@/lib/commissions'
 import { logActivity } from '@/lib/activities'
 import KanbanColumn from './KanbanColumn'
+
+/**
+ * Create a commission for a won lead through the server API.
+ * The API uses the service-role key to bypass RLS on the commissions table
+ * (the browser/anon client is blocked by RLS, which previously caused
+ * commissions to silently fail). Returns the commission or null.
+ */
+async function createCommissionForLead(
+  leadId: string,
+  userId: string | null,
+  dealValue: number | null,
+  token?: string,
+): Promise<{ amount: number } | null> {
+  try {
+    if (!token) return null
+    const response = await fetch('/api/commissions/create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        leadId,
+        userId,
+        dealValue,
+        stage: 'negociacao_fechada',
+      }),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      console.warn('[Commission] not created:', err.error || response.status)
+      return null
+    }
+    const result = await response.json()
+    return result.commission || null
+  } catch (error) {
+    console.error('[Commission] error:', error)
+    return null
+  }
+}
 
 interface KanbanBoardProps {
   onCreateLead?: () => void
@@ -344,10 +383,15 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
-      // When moving from backlog, assign the lead to the user who moved it
+      // When moving from backlog, assign the lead to the user who moved it.
+      // Only set assigned_to when we actually have a valid user id — sending an
+      // empty string would cause an "invalid input syntax for type uuid" error
+      // and silently revert the move (this blocked comercial users).
       const updatePayload: Record<string, string> = { id: draggedLeadId, status: newStatus }
-      if (oldStatus === 'backlog' && newStatus !== 'backlog') {
-        updatePayload.assigned_to = currentUserId || ''
+      if (oldStatus === 'backlog' && newStatus !== 'backlog' && currentUserId) {
+        updatePayload.assigned_to = currentUserId
+        // keep the local object in sync so commission attribution works
+        draggedLead.assigned_to = currentUserId
       }
 
       const response = await fetch('/api/leads', {
@@ -377,23 +421,21 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         newStatusTitle
       )
 
-      if (newStatus === 'negociacao_fechada' && draggedLead.assigned_to && draggedLead.value) {
-        const commission = await createCommissionOnWin(
+      const stageTitle = PIPELINE_STAGES.find((s) => s.id === newStatus)?.title
+      if (newStatus === 'negociacao_fechada') {
+        const commission = await createCommissionForLead(
           draggedLeadId,
-          draggedLead.assigned_to,
-          draggedLead.value,
-          newStatus
+          draggedLead.assigned_to || currentUserId || null,
+          draggedLead.custom_value ?? draggedLead.value ?? null,
+          token
         )
-
         if (commission) {
-          toast.success(
-            `Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title} - Comissão de R$ ${commission.amount.toFixed(2)} registrada!`
-          )
+          toast.success(`Lead movido para ${stageTitle} - Comissão de R$ ${commission.amount.toFixed(2)} registrada!`)
         } else {
-          toast.success(`Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title}`)
+          toast.success(`Lead movido para ${stageTitle}`)
         }
       } else {
-        toast.success(`Lead movido para ${PIPELINE_STAGES.find((s) => s.id === newStatus)?.title}`)
+        toast.success(`Lead movido para ${stageTitle}`)
       }
     } catch (error) {
       console.error('Error updating lead:', error)
@@ -491,9 +533,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         status: newStatus,
       }
 
-      // When moving from backlog, assign the lead to the user who moved it
-      if (statusChanged && oldStatus === 'backlog' && newStatus !== 'backlog') {
-        updatePayload.assigned_to = currentUserId || ''
+      // When moving from backlog, assign the lead to the user who moved it.
+      // Guard against empty string (invalid uuid) which would revert the update.
+      if (statusChanged && oldStatus === 'backlog' && newStatus !== 'backlog' && currentUserId) {
+        updatePayload.assigned_to = currentUserId
+        updatedLead.assigned_to = currentUserId
       }
 
       const response = await fetch('/api/leads', {
@@ -532,12 +576,12 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       )
 
       // Handle commission on win via modal status change
-      if (statusChanged && newStatus === 'negociacao_fechada' && updatedLead.assigned_to && updatedLead.value) {
-        const commission = await createCommissionOnWin(
+      if (statusChanged && newStatus === 'negociacao_fechada') {
+        const commission = await createCommissionForLead(
           updatedLead.id,
-          updatedLead.assigned_to,
-          updatedLead.value,
-          newStatus
+          updatedLead.assigned_to || currentUserId || null,
+          updatedLead.custom_value ?? updatedLead.value ?? null,
+          token
         )
         if (commission) {
           toast.success(

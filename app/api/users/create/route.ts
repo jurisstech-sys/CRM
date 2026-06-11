@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     const userRole = validRoles.includes(role) ? role : 'comercial';
 
     // Create auth user
+    let authUserId: string | null = null;
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -45,53 +46,60 @@ export async function POST(request: NextRequest) {
     });
 
     if (authError) {
-      console.error('[Users Create] Auth error:', authError.message);
-      if (authError.message.includes('already been registered')) {
+      // If the auth user already exists, recover their id so we can ensure their
+      // profile exists in public.users (fixes "ghost" users that exist in auth only)
+      if (authError.message.includes('already been registered') || authError.message.includes('already registered')) {
+        const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+        const existing = list?.users?.find((u) => u.email?.toLowerCase() === String(email).toLowerCase());
+        if (existing) {
+          authUserId = existing.id;
+          // Reset the password to the provided one for consistency
+          await supabaseAdmin.auth.admin.updateUserById(existing.id, { password });
+        } else {
+          return NextResponse.json({ error: 'Este email já está registrado' }, { status: 409 });
+        }
+      } else {
+        console.error('[Users Create] Auth error:', authError.message);
         return NextResponse.json(
-          { error: 'Este email já está registrado' },
-          { status: 409 }
+          { error: `Erro ao criar usuário: ${authError.message}` },
+          { status: 400 }
         );
       }
-      return NextResponse.json(
-        { error: `Erro ao criar usuário: ${authError.message}` },
-        { status: 400 }
-      );
+    } else {
+      authUserId = authData.user?.id || null;
     }
 
-    if (!authData.user) {
+    if (!authUserId) {
       return NextResponse.json(
         { error: 'Erro ao criar usuário (sem dados retornados)' },
         { status: 500 }
       );
     }
 
-    // Insert into users table
+    // Upsert into users table (creates the profile, or restores/updates an existing one)
     const { error: insertError } = await supabaseAdmin
       .from('users')
-      .insert({
-        id: authData.user.id,
+      .upsert({
+        id: authUserId,
         email,
         full_name: full_name || null,
         role: userRole,
         status: 'active',
-        created_at: new Date().toISOString(),
+        deleted_at: null,
         updated_at: new Date().toISOString(),
-      });
+      }, { onConflict: 'id' });
 
     if (insertError) {
       console.error('[Users Create] Insert error:', insertError.message);
-      // User was created in auth but failed in users table - still return success
-      // but log the error
-      return NextResponse.json({
-        success: true,
-        warning: `Usuário criado na autenticação mas erro ao salvar perfil: ${insertError.message}`,
-        userId: authData.user.id,
-      });
+      return NextResponse.json(
+        { error: `Usuário criado na autenticação mas erro ao salvar perfil: ${insertError.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      userId: authData.user.id,
+      userId: authUserId,
       message: 'Usuário criado com sucesso',
     });
   } catch (error) {

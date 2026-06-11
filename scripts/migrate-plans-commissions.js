@@ -91,6 +91,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_commission_total DECIMAL(15, 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin', 'super_admin', 'comercial', 'user', 'viewer'));
+
+-- ============================================================
+-- RLS: administradores podem visualizar TODAS as comissões
+-- (a página de comissões e o dashboard leem via cliente do navegador).
+-- As inserções de comissão são feitas via API com service role, que
+-- ignora o RLS — portanto não é necessária policy de INSERT aqui.
+-- ============================================================
+DROP POLICY IF EXISTS "Admins can view all commissions" ON commissions;
+CREATE POLICY "Admins can view all commissions" ON commissions
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'super_admin'))
+  );
 `
 
 const SEED_PLANS = [
