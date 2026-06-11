@@ -113,6 +113,8 @@ export default function DashboardPage() {
         const { data: comerciaisData } = await supabase
           .from('users')
           .select('id, full_name, email')
+          .is('deleted_at', null)
+          .neq('status', 'inactive')
           .order('full_name', { ascending: true })
         if (comerciaisData) {
           setComerciais(comerciaisData.map(u => ({
@@ -152,7 +154,7 @@ export default function DashboardPage() {
         ] = await Promise.all([
           leadsCountQ,
           clientsCountQ,
-          supabase.from('users').select('id', { count: 'exact', head: true }),
+          supabase.from('users').select('id', { count: 'exact', head: true }).is('deleted_at', null).neq('status', 'inactive'),
           wonQ,
           commQ,
           allLeadsQ,
@@ -214,7 +216,11 @@ export default function DashboardPage() {
         setFunnelData(funnel)
 
         // User ranking
-        const { data: usersData } = await supabase.from('users').select('id, full_name')
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .is('deleted_at', null)
+          .neq('status', 'inactive')
         const userNameMap = new Map<string, string>()
         usersData?.forEach(u => userNameMap.set(u.id, u.full_name || 'Sem nome'))
 

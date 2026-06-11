@@ -81,6 +81,8 @@ export default function CommissionsPage() {
       const { data: usersData } = await supabase
         .from('users')
         .select('id, full_name')
+        .is('deleted_at', null)
+        .neq('status', 'inactive')
 
       const userMap = new Map()
       usersData?.forEach((user: User) => {

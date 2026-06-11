@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log(`[Users Create] Perfil sincronizado em public.users: ${email} (id=${authUserId}, role=${userRole}, status=active)`);
+
     return NextResponse.json({
       success: true,
       userId: authUserId,

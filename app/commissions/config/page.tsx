@@ -78,6 +78,8 @@ export default function CommissionConfigPage() {
         const { data: directUsers, error: usersError } = await supabase
           .from('users')
           .select('id, full_name, email, role, commission_rate')
+          .is('deleted_at', null)
+          .neq('status', 'inactive')
           .order('full_name', { ascending: true })
 
         if (usersError) {

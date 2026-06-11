@@ -85,6 +85,8 @@ export default function ReportsPage() {
       const { data: usersData } = await supabase
         .from('users')
         .select('id, full_name, email')
+        .is('deleted_at', null)
+        .neq('status', 'inactive')
         .order('email', { ascending: true });
 
       if (usersData) {

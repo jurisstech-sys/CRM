@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Erro ao excluir usuário: ${error.message}` }, { status: 400 });
     }
 
+    console.log(`[Users Delete] Soft delete aplicado: userId=${userId} (deleted_at setado, status=inactive)`);
+
     return NextResponse.json({ success: true, message: 'Usuário excluído com sucesso' });
   } catch (error) {
     console.error('[Users Delete] Error:', error);
