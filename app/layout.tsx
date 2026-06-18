@@ -2,6 +2,7 @@ import { DM_Sans, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { Analytics } from '@vercel/analytics/next'
 // import { DbInitializer } from '@/components/db-initializer'
 
 const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-sans' })
@@ -31,6 +32,7 @@ export default function RootLayout({
           {children}
           <Toaster />
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   )
