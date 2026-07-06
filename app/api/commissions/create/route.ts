@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Resolve the lead to fill in missing data (assigned user, value/custom_value)
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, assigned_to, value, custom_value, title')
+      .select('id, comercial_id, assigned_to, value, custom_value, title')
       .eq('id', leadId)
       .single();
 
@@ -67,14 +67,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Lead não encontrado' }, { status: 404 });
     }
 
-    // The commission belongs to the assigned user; fall back to the lead owner,
-    // then to whoever triggered the action.
-    const beneficiary = userId || lead.assigned_to || user.id;
+    // The commission belongs to the responsible commercial (comercial_id).
+    // Fall back to legacy assigned_to, then to whoever triggered the action.
+    const beneficiary = userId || lead.comercial_id || lead.assigned_to || user.id;
     // Deal value: explicit > custom_value > value
     const value = Number(dealValue ?? lead.custom_value ?? lead.value ?? 0);
 
     if (!beneficiary) {
-      return NextResponse.json({ error: 'Lead sem responsável (assigned_to) para atribuir comissão' }, { status: 400 });
+      return NextResponse.json({ error: 'Lead sem comercial responsável para atribuir comissão' }, { status: 400 });
     }
     if (!value || value <= 0) {
       return NextResponse.json({ error: 'Valor do negócio inválido para cálculo de comissão' }, { status: 400 });

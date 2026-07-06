@@ -20,6 +20,7 @@ export interface Lead {
   currency?: string
   status: string
   assigned_to?: string | null
+  comercial_id?: string | null
   expected_close_date?: string | null
   probability?: number | null
   next_follow_up?: string | null
@@ -34,6 +35,7 @@ export interface Lead {
   updated_by?: string | null
   client_name?: string
   client_email?: string
+  comercial_name?: string | null
 }
 
 interface LeadCardProps {

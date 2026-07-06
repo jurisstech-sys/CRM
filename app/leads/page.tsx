@@ -7,25 +7,14 @@ import { LeadUploader, Lead } from '@/components/leads/LeadUploader';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, Trash2, AlertCircle, CheckCircle, Loader2, UserCheck } from 'lucide-react';
+import { Upload, Trash2, AlertCircle, CheckCircle, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { usePermissions } from '@/hooks/usePermissions';
-import { getRoleLabel } from '@/lib/permissions';
 
 interface LeadPreviewData extends Lead {
   _rowIndex: number;
 }
-
-interface CommercialUser {
-  id: string;
-  full_name: string | null;
-  email: string;
-  role: string;
-}
-
-const UNASSIGNED = '__unassigned__';
 
 export default function LeadsPage() {
   const router = useRouter();
@@ -36,8 +25,6 @@ export default function LeadsPage() {
   const [importProgress, setImportProgress] = useState(0);
   const [importedCount, setImportedCount] = useState(0);
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [commercials, setCommercials] = useState<CommercialUser[]>([]);
-  const [assignedTo, setAssignedTo] = useState<string>(UNASSIGNED);
 
   // Block non-admins from importing
   useEffect(() => {
@@ -46,25 +33,6 @@ export default function LeadsPage() {
       router.push('/pipeline');
     }
   }, [permLoading, isAdmin, router]);
-
-  // Load list of users (commercial destinations) for admins
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) return;
-        const res = await fetch('/api/users/list', { headers: { Authorization: `Bearer ${token}` } });
-        if (res.ok) {
-          const data = await res.json();
-          setCommercials(data.users || []);
-        }
-      } catch (e) {
-        console.error('Erro ao carregar usuários:', e);
-      }
-    };
-    if (isAdmin) loadUsers();
-  }, [isAdmin]);
 
   const handleDataParsed = useCallback((parsedLeads: Lead[], uploadedFileName: string) => {
     const leadsWithIndex = parsedLeads.map((lead, index) => ({
@@ -149,7 +117,6 @@ export default function LeadsPage() {
           body: JSON.stringify({
             leads: cleanedBatch,
             fileName,
-            assignedTo: assignedTo === UNASSIGNED ? null : assignedTo,
           }),
         });
 
@@ -226,28 +193,17 @@ export default function LeadsPage() {
             isLoading={isImporting}
           />
 
-          {/* Comercial de destino */}
-          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white mb-2">
-              <UserCheck className="h-4 w-4 text-blue-600" />
-              Atribuir leads ao comercial (opcional)
-            </label>
-            <Select value={assignedTo} onValueChange={setAssignedTo} disabled={isImporting}>
-              <SelectTrigger className="max-w-md">
-                <SelectValue placeholder="Sem atribuição (ficam no Backlog sem responsável)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNASSIGNED}>Sem atribuição (Backlog)</SelectItem>
-                {commercials.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {(u.full_name || u.email)} — {getRoleLabel(u.role)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Se um comercial for selecionado, todos os leads importados serão atribuídos a ele. Caso contrário, ficam disponíveis no Backlog.
-            </p>
+          {/* Importação global — leads ficam disponíveis para toda a equipe */}
+          <div className="mt-6 flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+            <Users className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-blue-800 dark:text-blue-200">
+              <p className="font-medium">Importação global</p>
+              <p>
+                Os leads ficarão disponíveis no Backlog para toda a equipe. O comercial
+                responsável é atribuído automaticamente ao primeiro vendedor que mover o
+                lead do Backlog para outra etapa.
+              </p>
+            </div>
           </div>
         </Card>
 

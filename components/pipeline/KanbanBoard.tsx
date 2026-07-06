@@ -73,6 +73,7 @@ interface KanbanBoardProps {
   isAdminUser?: boolean
   canDeleteLeads?: boolean
   currentUserId?: string | null
+  currentUserName?: string | null
 }
 
 interface PipelineData {
@@ -88,7 +89,7 @@ const PIPELINE_STAGES = [
   { id: 'prospeccao_futura', title: 'Prospecção Futura', color: 'bg-purple-500' },
 ]
 
-export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads = false, currentUserId }: KanbanBoardProps) {
+export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads = false, currentUserId, currentUserName }: KanbanBoardProps) {
   const [leads, setLeads] = useState<PipelineData>({
     backlog: [],
     em_contato: [],
@@ -202,6 +203,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           currency: lead.currency,
           status: lead.status,
           assigned_to: lead.assigned_to,
+          comercial_id: lead.comercial_id,
           expected_close_date: lead.expected_close_date,
           probability: lead.probability,
           next_follow_up: lead.next_follow_up,
@@ -216,6 +218,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
           updated_by: lead.updated_by,
           client_name: lead.clients?.name,
           client_email: lead.clients?.email,
+          comercial_name: lead.comercialUser?.full_name || lead.comercialUser?.email || null,
         }
 
         if (grouped[lead.status]) {
@@ -383,15 +386,24 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
-      // When moving from backlog, assign the lead to the user who moved it.
-      // Only set assigned_to when we actually have a valid user id — sending an
-      // empty string would cause an "invalid input syntax for type uuid" error
-      // and silently revert the move (this blocked comercial users).
+      // Atribuição automática: quando o lead sai do Backlog pela primeira vez
+      // (comercial ainda vazio), o comercial responsável passa a ser quem o moveu.
+      // Só preenchemos quando há um id válido — enviar string vazia causaria erro
+      // de UUID e reverteria a movimentação silenciosamente.
       const updatePayload: Record<string, string> = { id: draggedLeadId, status: newStatus }
-      if (oldStatus === 'backlog' && newStatus !== 'backlog' && currentUserId) {
-        updatePayload.assigned_to = currentUserId
-        // keep the local object in sync so commission attribution works
+      let autoAssigned = false
+      if (
+        oldStatus === 'backlog' &&
+        newStatus !== 'backlog' &&
+        currentUserId &&
+        !draggedLead.comercial_id
+      ) {
+        updatePayload.comercial_id = currentUserId
+        updatePayload.assigned_to = currentUserId // mantém compatibilidade / RLS
+        // mantém o objeto local em sincronia para atribuição de comissão
+        draggedLead.comercial_id = currentUserId
         draggedLead.assigned_to = currentUserId
+        autoAssigned = true
       }
 
       const response = await fetch('/api/leads', {
@@ -421,11 +433,24 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         newStatusTitle
       )
 
+      // Auditoria da atribuição automática de comercial
+      if (autoAssigned) {
+        await logActivity(
+          'atribuicao_automatica',
+          'lead',
+          draggedLeadId,
+          `Lead "${draggedLead.title}" atribuído automaticamente a ${currentUserName || currentUserId}`,
+          draggedLead.title,
+          undefined,
+          currentUserName || currentUserId || undefined
+        )
+      }
+
       const stageTitle = PIPELINE_STAGES.find((s) => s.id === newStatus)?.title
       if (newStatus === 'negociacao_fechada') {
         const commission = await createCommissionForLead(
           draggedLeadId,
-          draggedLead.assigned_to || currentUserId || null,
+          draggedLead.comercial_id || draggedLead.assigned_to || currentUserId || null,
           draggedLead.custom_value ?? draggedLead.value ?? null,
           token
         )
@@ -533,11 +558,21 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         status: newStatus,
       }
 
-      // When moving from backlog, assign the lead to the user who moved it.
-      // Guard against empty string (invalid uuid) which would revert the update.
-      if (statusChanged && oldStatus === 'backlog' && newStatus !== 'backlog' && currentUserId) {
+      // Atribuição automática ao sair do Backlog pela primeira vez (comercial vazio).
+      // Guard contra string vazia (uuid inválido) que reverteria o update.
+      let autoAssigned = false
+      if (
+        statusChanged &&
+        oldStatus === 'backlog' &&
+        newStatus !== 'backlog' &&
+        currentUserId &&
+        !originalLead?.comercial_id
+      ) {
+        updatePayload.comercial_id = currentUserId
         updatePayload.assigned_to = currentUserId
+        updatedLead.comercial_id = currentUserId
         updatedLead.assigned_to = currentUserId
+        autoAssigned = true
       }
 
       const response = await fetch('/api/leads', {
@@ -575,11 +610,24 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         statusChanged ? (PIPELINE_STAGES.find((s) => s.id === newStatus)?.title || newStatus) : undefined
       )
 
+      // Auditoria da atribuição automática de comercial
+      if (autoAssigned) {
+        await logActivity(
+          'atribuicao_automatica',
+          'lead',
+          updatedLead.id,
+          `Lead "${updatedLead.title}" atribuído automaticamente a ${currentUserName || currentUserId}`,
+          updatedLead.title,
+          undefined,
+          currentUserName || currentUserId || undefined
+        )
+      }
+
       // Handle commission on win via modal status change
       if (statusChanged && newStatus === 'negociacao_fechada') {
         const commission = await createCommissionForLead(
           updatedLead.id,
-          updatedLead.assigned_to || currentUserId || null,
+          updatedLead.comercial_id || updatedLead.assigned_to || currentUserId || null,
           updatedLead.custom_value ?? updatedLead.value ?? null,
           token
         )
@@ -732,6 +780,8 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         onSave={handleUpdateLead}
         onDelete={canDeleteLeads ? handleDeleteLead : undefined}
         canDelete={canDeleteLeads}
+        isAdmin={isAdminUser}
+        onComercialChanged={fetchLeads}
       />
     </>
   )

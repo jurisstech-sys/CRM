@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('leads')
-      .select('*, clients(name, email)')
+      .select('*, clients(name, email), comercialUser:users!leads_comercial_id_fkey(id, full_name, email)')
       .order('created_at', { ascending: false });
 
     // Filter by status if provided

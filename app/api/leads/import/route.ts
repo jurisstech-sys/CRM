@@ -14,7 +14,6 @@ interface IncomingLead {
 interface ImportRequestBody {
   leads: IncomingLead[];
   fileName: string;
-  assignedTo?: string | null;
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -79,25 +78,12 @@ export async function POST(request: NextRequest) {
 
     // Parse body
     const body = await request.json() as ImportRequestBody;
-    const { leads, fileName, assignedTo } = body;
+    const { leads, fileName } = body;
 
-    // Validate assignedTo (commercial destination) if provided
-    let resolvedAssignedTo: string | null = null;
-    if (assignedTo) {
-      const { data: assignee } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', assignedTo)
-        .is('deleted_at', null)
-        .single();
-      if (!assignee) {
-        return NextResponse.json(
-          { error: 'Comercial selecionado para atribuição é inválido.' },
-          { status: 400 }
-        );
-      }
-      resolvedAssignedTo = assignedTo;
-    }
+    // Importação GLOBAL: leads entram sem comercial (comercial_id / assigned_to = NULL).
+    // Ficam disponíveis no Backlog para toda a equipe e o comercial é atribuído
+    // automaticamente na primeira movimentação do Backlog (ver KanbanBoard).
+    console.log('[Leads Import] Importação global — leads sem comercial (Backlog compartilhado)');
 
     console.log('[Leads Import] Dados recebidos:', {
       fileName,
@@ -157,7 +143,9 @@ export async function POST(request: NextRequest) {
           email3: lead.email3 ? String(lead.email3).trim() : null,
           phone1: lead.celular1 ? String(lead.celular1).trim() : null,
           phone2: lead.celular2 ? String(lead.celular2).trim() : null,
-          assigned_to: resolvedAssignedTo,
+          // Importação global: sem comercial atribuído (Backlog compartilhado).
+          comercial_id: null,
+          assigned_to: null,
           created_by: user.id,
           updated_by: user.id,
         };

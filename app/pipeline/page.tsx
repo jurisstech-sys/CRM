@@ -48,7 +48,8 @@ export default function PipelinePage() {
     client_id: '',
   })
 
-  const { isAdmin, canDelete: userCanDelete, userId } = usePermissions()
+  const { isAdmin, canDelete: userCanDelete, userId, user } = usePermissions()
+  const currentUserName = user?.full_name || user?.email || null
 
   const handleCreateLead = async () => {
     if (!formData.title.trim()) {
@@ -118,6 +119,7 @@ export default function PipelinePage() {
           isAdminUser={isAdmin}
           canDeleteLeads={userCanDelete}
           currentUserId={userId}
+          currentUserName={currentUserName}
         />
 
         {/* Create Lead Dialog */}

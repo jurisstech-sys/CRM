@@ -131,15 +131,15 @@ export default function DashboardPage() {
         let clientsCountQ = supabase.from('clients').select('id', { count: 'exact', head: true })
         let wonQ = supabase.from('leads').select('id, value').eq('status', 'negociacao_fechada').gte('updated_at', monthStart)
         let commQ = supabase.from('commissions').select('amount, status').gte('created_at', monthStart)
-        let allLeadsQ = supabase.from('leads').select('id, status, value, assigned_to')
+        let allLeadsQ = supabase.from('leads').select('id, status, value, comercial_id')
         let activitiesQ = supabase.from('activities').select('id', { count: 'exact', head: true }).eq('status', 'pending')
 
         if (filterByUser) {
-          leadsCountQ = leadsCountQ.eq('assigned_to', selectedUser)
+          leadsCountQ = leadsCountQ.eq('comercial_id', selectedUser)
           clientsCountQ = clientsCountQ.eq('created_by', selectedUser)
-          wonQ = wonQ.eq('assigned_to', selectedUser)
+          wonQ = wonQ.eq('comercial_id', selectedUser)
           commQ = commQ.eq('user_id', selectedUser)
-          allLeadsQ = allLeadsQ.eq('assigned_to', selectedUser)
+          allLeadsQ = allLeadsQ.eq('comercial_id', selectedUser)
           activitiesQ = activitiesQ.eq('assigned_to', selectedUser)
         }
 
@@ -226,11 +226,11 @@ export default function DashboardPage() {
 
         const rankingMap: Record<string, UserRanking> = {}
         allLeads.forEach(lead => {
-          if (!lead.assigned_to) return
-          if (!rankingMap[lead.assigned_to]) {
-            rankingMap[lead.assigned_to] = {
-              user_id: lead.assigned_to,
-              full_name: userNameMap.get(lead.assigned_to) || 'Desconhecido',
+          if (!lead.comercial_id) return
+          if (!rankingMap[lead.comercial_id]) {
+            rankingMap[lead.comercial_id] = {
+              user_id: lead.comercial_id,
+              full_name: userNameMap.get(lead.comercial_id) || 'Desconhecido',
               closed: 0,
               revenue: 0,
               commission: 0,
@@ -238,11 +238,11 @@ export default function DashboardPage() {
             }
           }
           if (lead.status === 'negociacao_fechada') {
-            rankingMap[lead.assigned_to].closed++
-            rankingMap[lead.assigned_to].revenue += lead.value || 0
+            rankingMap[lead.comercial_id].closed++
+            rankingMap[lead.comercial_id].revenue += lead.value || 0
           }
           if (lead.status && !['negociacao_fechada', 'lead_nao_qualificado'].includes(lead.status)) {
-            rankingMap[lead.assigned_to].leadsInPipeline++
+            rankingMap[lead.comercial_id].leadsInPipeline++
           }
         })
 
@@ -263,8 +263,8 @@ export default function DashboardPage() {
           myActivitiesRes,
           myClientsRes,
         ] = await Promise.all([
-          supabase.from('leads').select('id, status, value').eq('assigned_to', userId),
-          supabase.from('leads').select('id, value').eq('assigned_to', userId).eq('status', 'negociacao_fechada').gte('updated_at', monthStart),
+          supabase.from('leads').select('id, status, value').eq('comercial_id', userId),
+          supabase.from('leads').select('id, value').eq('comercial_id', userId).eq('status', 'negociacao_fechada').gte('updated_at', monthStart),
           supabase.from('commissions').select('amount, status, created_at').eq('user_id', userId).gte('created_at', monthStart),
           supabase.from('activities').select('id', { count: 'exact', head: true }).eq('assigned_to', userId).eq('status', 'pending'),
           supabase.from('clients').select('id', { count: 'exact', head: true }).eq('created_by', userId),

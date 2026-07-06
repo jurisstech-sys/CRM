@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Trash2, Save, X, Mail, Phone, User, DollarSign, Calendar, Percent, ArrowRightLeft, Package } from 'lucide-react'
+import { Trash2, Save, X, Mail, Phone, User, DollarSign, Calendar, Percent, ArrowRightLeft, Package, UserCheck, Lock } from 'lucide-react'
 import type { Lead } from './LeadCard'
 import { LeadTimeline } from './LeadTimeline'
 import { LeadActivityHistory } from './LeadActivityHistory'
@@ -33,7 +33,15 @@ interface Plan {
   is_custom: boolean
 }
 
+interface CommercialOption {
+  id: string
+  full_name: string | null
+  email: string
+  role?: string
+}
+
 const NO_PLAN = '__no_plan__'
+const NO_COMERCIAL = '__no_comercial__'
 
 interface LeadModalProps {
   lead: Lead | null
@@ -42,6 +50,8 @@ interface LeadModalProps {
   onSave: (lead: Lead) => void
   onDelete?: (id: string) => void
   canDelete?: boolean
+  isAdmin?: boolean
+  onComercialChanged?: () => void
 }
 
 const STATUS_OPTIONS = [
@@ -62,17 +72,45 @@ const statusColors: Record<string, string> = {
   prospeccao_futura: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
 }
 
-export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }: LeadModalProps) {
+export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete, isAdmin, onComercialChanged }: LeadModalProps) {
   const [editData, setEditData] = useState<Lead | null>(null)
   const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('details')
   const [plans, setPlans] = useState<Plan[]>([])
+  const [commercials, setCommercials] = useState<CommercialOption[]>([])
+  const [selectedComercialId, setSelectedComercialId] = useState<string>(NO_COMERCIAL)
+  const [comercialReason, setComercialReason] = useState<string>('')
+  const [savingComercial, setSavingComercial] = useState(false)
 
   useEffect(() => {
     if (lead) {
       setEditData({ ...lead })
       setActiveTab('details')
+      setSelectedComercialId(lead.comercial_id || NO_COMERCIAL)
+      setComercialReason('')
     }
   }, [lead])
+
+  // Load commercial users (admin only) for the responsible selector
+  useEffect(() => {
+    const loadCommercials = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) return
+        const res = await fetch('/api/users/list', { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) {
+          const data = await res.json()
+          const list: CommercialOption[] = (data.users || []).filter(
+            (u: CommercialOption) => u.role === 'comercial' || u.role === 'admin' || u.role === 'super_admin'
+          )
+          setCommercials(list)
+        }
+      } catch (e) {
+        console.error('Erro ao carregar comerciais:', e)
+      }
+    }
+    if (isOpen && isAdmin) loadCommercials()
+  }, [isOpen, isAdmin])
 
   // Load active plans for the plan selector
   useEffect(() => {
@@ -135,6 +173,54 @@ export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }
 
   const handleStatusChange = (newStatus: string) => {
     setEditData({ ...editData, status: newStatus })
+  }
+
+  const comercialChanged =
+    isAdmin && editData !== null &&
+    (selectedComercialId === NO_COMERCIAL ? null : selectedComercialId) !== (editData.comercial_id || null)
+
+  const handleChangeComercial = async () => {
+    if (!editData || !comercialChanged) return
+    setSavingComercial(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.')
+        return
+      }
+      const res = await fetch(`/api/leads/${editData.id}/change-comercial`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          comercialId: selectedComercialId === NO_COMERCIAL ? null : selectedComercialId,
+          reason: comercialReason.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao alterar o comercial responsável')
+        return
+      }
+      toast.success('Comercial responsável atualizado com sucesso')
+      // Reflect locally
+      const newComercial = commercials.find((c) => c.id === selectedComercialId)
+      setEditData({
+        ...editData,
+        comercial_id: selectedComercialId === NO_COMERCIAL ? null : selectedComercialId,
+        comercial_name: newComercial ? (newComercial.full_name || newComercial.email) : null,
+      })
+      setComercialReason('')
+      if (onComercialChanged) onComercialChanged()
+    } catch (e) {
+      console.error('Erro ao alterar comercial:', e)
+      toast.error('Erro ao alterar o comercial responsável')
+    } finally {
+      setSavingComercial(false)
+    }
   }
 
   const formattedValue = editData.value
@@ -209,6 +295,67 @@ export function LeadModal({ lead, isOpen, onClose, onSave, onDelete, canDelete }
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Comercial Responsável */}
+            <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+              <label className="text-sm font-medium text-slate-400 flex items-center gap-2 mb-2">
+                <UserCheck className="w-4 h-4" /> Comercial Responsável
+              </label>
+              {isAdmin ? (
+                <>
+                  <Select value={selectedComercialId} onValueChange={setSelectedComercialId}>
+                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                      <SelectValue placeholder="Selecione o comercial" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      <SelectItem value={NO_COMERCIAL} className="text-white hover:bg-slate-700 focus:bg-slate-700">
+                        Não atribuído (Backlog global)
+                      </SelectItem>
+                      {commercials.map((c) => (
+                        <SelectItem
+                          key={c.id}
+                          value={c.id}
+                          className="text-white hover:bg-slate-700 focus:bg-slate-700"
+                        >
+                          {c.full_name || c.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {comercialChanged && (
+                    <div className="mt-3 space-y-2">
+                      <Input
+                        value={comercialReason}
+                        onChange={(e) => setComercialReason(e.target.value)}
+                        className="bg-slate-800 border-slate-700 text-white"
+                        placeholder="Motivo da alteração (opcional)"
+                      />
+                      <Button
+                        onClick={handleChangeComercial}
+                        disabled={savingComercial}
+                        className="bg-amber-600 hover:bg-amber-700 w-full"
+                        size="sm"
+                      >
+                        <ArrowRightLeft className="w-4 h-4 mr-2" />
+                        {savingComercial ? 'Alterando...' : 'Confirmar alteração de comercial'}
+                      </Button>
+                      <p className="text-xs text-slate-500">
+                        A alteração é registrada no histórico de auditoria do lead.
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-sm">
+                    {editData.comercial_name || 'Não atribuído'}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1 text-xs text-slate-500">
+                    <Lock className="w-3 h-3" /> Apenas administradores podem alterar o responsável
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Nome */}

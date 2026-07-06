@@ -1,6 +1,12 @@
 import { supabase } from './supabase'
 
-export type ActionType = 'create' | 'update' | 'delete' | 'move'
+export type ActionType =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'move'
+  | 'atribuicao_automatica'
+  | 'alteracao_comercial'
 export type EntityType = 'client' | 'lead' | 'commission' | 'file'
 
 export interface ActivityLog {
