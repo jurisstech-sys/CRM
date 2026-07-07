@@ -52,14 +52,23 @@ export default function UsersPage() {
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, full_name, role, created_at')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setUsers(data || []);
+      // Use the API route (service role + auto-heal) instead of a direct browser
+      // query, which is subject to RLS and can hide newly created users.
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        return;
+      }
+      const res = await fetch('/api/users/list', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Erro ao carregar usuários');
+      }
+      const data = await res.json();
+      setUsers(data.users || []);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast.error('Erro ao carregar usuários');

@@ -49,11 +49,52 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
-    // Fetch all users
+    // Self-healing: reconcile Supabase Auth with public.users so that ANY user
+    // that exists in Auth always has a profile row and therefore appears in every
+    // selector (fixes "new users não aparecem nos filtros").
+    try {
+      const { data: authList } = await supabase.auth.admin.listUsers();
+      const authUsers = authList?.users || [];
+
+      // Current profiles (including soft-deleted, to avoid resurrecting them)
+      const { data: existingProfiles } = await supabase
+        .from('users')
+        .select('id, deleted_at');
+      const existingMap = new Map(
+        (existingProfiles || []).map((u) => [u.id, u])
+      );
+
+      // Insert a profile for any Auth user that has no row at all.
+      const missing = authUsers.filter((au) => !existingMap.has(au.id));
+      if (missing.length > 0) {
+        const rows = missing.map((au) => ({
+          id: au.id,
+          email: au.email,
+          full_name:
+            (au.user_metadata && (au.user_metadata.full_name as string)) || null,
+          role: 'comercial',
+          status: 'active',
+          deleted_at: null,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error: healErr } = await supabase.from('users').upsert(rows, { onConflict: 'id' });
+        if (healErr) {
+          console.warn('[Users List API] Auto-heal insert warning:', healErr.message);
+        } else {
+          console.log(`[Users List API] Auto-heal: criados ${rows.length} perfis ausentes`);
+        }
+      }
+    } catch (healError) {
+      // Never fail the listing because of the reconciliation step
+      console.warn('[Users List API] Auto-heal skipped:', healError instanceof Error ? healError.message : healError);
+    }
+
+    // Fetch all active (non-deleted) users
     const { data: users, error } = await supabase
       .from('users')
-      .select('id, full_name, email, role, commission_rate')
+      .select('id, full_name, email, role, commission_rate, created_at')
       .is('deleted_at', null)
+      .neq('status', 'inactive')
       .order('full_name', { ascending: true });
 
     if (error) {
