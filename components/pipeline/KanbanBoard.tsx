@@ -101,6 +101,9 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
+  // Informação sobre o pool de Backlog (quando há mais leads do que os exibidos)
+  const [backlogInfo, setBacklogInfo] = useState<{ total: number; shown: number } | null>(null)
+
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   const [showCheckboxes, setShowCheckboxes] = useState(false)
@@ -241,6 +244,13 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       })
 
       setLeads(grouped)
+
+      // Guarda informação de quantos leads de backlog existem vs. exibidos
+      if (typeof result.backlogTotal === 'number' && typeof result.backlogShown === 'number') {
+        setBacklogInfo({ total: result.backlogTotal, shown: result.backlogShown })
+      } else {
+        setBacklogInfo(null)
+      }
     } catch (error) {
       console.error('Error fetching leads:', error)
       toast.error('Erro ao carregar leads')
@@ -719,6 +729,15 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         onDragCancel={() => setActiveId(null)}
       >
         <div className="space-y-4">
+          {/* Aviso: backlog grande (nem todos exibidos, mas nada foi perdido) */}
+          {backlogInfo && backlogInfo.total > backlogInfo.shown && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+              Exibindo os <strong>{backlogInfo.shown.toLocaleString('pt-BR')}</strong> leads mais recentes do Backlog,
+              de um total de <strong>{backlogInfo.total.toLocaleString('pt-BR')}</strong> não atribuídos.
+              Todos os leads em atendimento (com comercial) continuam visíveis e nenhum lead foi excluído.
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <h1 className="text-2xl font-bold text-white">Pipeline de Leads</h1>

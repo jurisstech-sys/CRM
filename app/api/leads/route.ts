@@ -52,31 +52,109 @@ export async function GET(request: NextRequest) {
     // Build query - use service role to bypass RLS
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status');
+    const statuses = statusFilter ? statusFilter.split(',') : null;
 
-    let query = supabase
+    // Limite do "pool" de Backlog não atribuído (leads sem comercial). Como a base
+    // pode ter centenas de milhares de leads no Backlog, carregamos apenas os mais
+    // recentes desse pool para não travar o navegador. Configurável via ?backlogLimit.
+    const backlogLimitParam = parseInt(searchParams.get('backlogLimit') || '', 10);
+    const BACKLOG_LIMIT = Number.isFinite(backlogLimitParam) && backlogLimitParam > 0
+      ? Math.min(backlogLimitParam, 5000)
+      : 2000;
+
+    const SELECT_COLS = '*, clients(name, email), comercialUser:users!leads_comercial_id_fkey(id, full_name, email)';
+
+    // Supabase retorna no máximo 1000 linhas por requisição. Esta função pagina
+    // com .range() para trazer TODAS as linhas que casam com o filtro.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fetchAll = async (buildQuery: () => any) => {
+      const pageSize = 1000;
+      let from = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all: any[] = [];
+      // Loop até acabar as páginas
+      // (leads em andamento/atribuídos são poucos milhares, então é seguro)
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+        // trava de segurança para evitar loops infinitos
+        if (from > 200000) break;
+      }
+      return all;
+    };
+
+    // 1) LEADS EM ANDAMENTO / ATRIBUÍDOS — SEMPRE retornados por completo.
+    //    Regra: tudo que NÃO seja "backlog sem comercial".
+    //    Ou seja: status != 'backlog'  OU  comercial_id IS NOT NULL.
+    //    Isso garante que nenhum lead que a equipe já está trabalhando desapareça
+    //    após uma importação (o bug relatado).
+    const workedLeads = await fetchAll(() => {
+      let q = supabase
+        .from('leads')
+        .select(SELECT_COLS)
+        .or('status.neq.backlog,comercial_id.not.is.null')
+        .order('created_at', { ascending: false });
+      if (statuses) q = q.in('status', statuses);
+      return q;
+    });
+
+    // 2) POOL DO BACKLOG (sem comercial) — apenas os mais recentes (limitado).
+    //    O Supabase limita cada requisição a 1000 linhas, então paginamos até
+    //    atingir o BACKLOG_LIMIT configurado.
+    let backlogLeads: typeof workedLeads = [];
+    if (!statuses || statuses.includes('backlog')) {
+      try {
+        const pageSize = 1000;
+        let from = 0;
+        while (backlogLeads.length < BACKLOG_LIMIT) {
+          const to = Math.min(from + pageSize - 1, BACKLOG_LIMIT - 1);
+          const { data: pageData, error: backlogErr } = await supabase
+            .from('leads')
+            .select(SELECT_COLS)
+            .eq('status', 'backlog')
+            .is('comercial_id', null)
+            .order('created_at', { ascending: false })
+            .range(from, to);
+          if (backlogErr) throw backlogErr;
+          if (!pageData || pageData.length === 0) break;
+          backlogLeads.push(...pageData);
+          if (pageData.length < pageSize) break;
+          from += pageSize;
+        }
+      } catch (backlogErr) {
+        console.error('[Leads API] Backlog error:', backlogErr);
+        return NextResponse.json(
+          { error: backlogErr instanceof Error ? backlogErr.message : 'Erro ao carregar backlog' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // Merge + dedupe por id (por segurança, caso um lead caia nos dois conjuntos)
+    const byId = new Map<string, (typeof workedLeads)[number]>();
+    for (const l of workedLeads) byId.set(l.id, l);
+    for (const l of backlogLeads) if (!byId.has(l.id)) byId.set(l.id, l);
+    const data = Array.from(byId.values());
+
+    // Contagem total do backlog não atribuído (para informar quando houver mais que o limite)
+    const { count: backlogTotal } = await supabase
       .from('leads')
-      .select('*, clients(name, email), comercialUser:users!leads_comercial_id_fkey(id, full_name, email)')
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'backlog')
+      .is('comercial_id', null);
 
-    // Filter by status if provided
-    if (statusFilter) {
-      const statuses = statusFilter.split(',');
-      query = query.in('status', statuses);
-    }
-
-    // IMPORTANT: Show ALL leads for ALL authenticated users
-    // The service role key already bypasses RLS
-    // Previously non-admins were filtered, but this caused leads to disappear
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('[Leads API] Error:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    console.log(`[Leads API] Returning ${data?.length || 0} leads for user ${user.email} (isAdmin: ${isAdmin})`);
-    return NextResponse.json({ leads: data || [], isAdmin });
+    console.log(`[Leads API] Retornando ${data.length} leads (andamento/atribuídos: ${workedLeads.length}, backlog exibido: ${backlogLeads.length}/${backlogTotal ?? '?'}) para ${user.email} (isAdmin: ${isAdmin})`);
+    return NextResponse.json({
+      leads: data,
+      isAdmin,
+      backlogTotal: backlogTotal ?? backlogLeads.length,
+      backlogShown: backlogLeads.length,
+    });
   } catch (error) {
     console.error('[Leads API] Error:', error);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
