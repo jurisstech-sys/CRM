@@ -102,7 +102,10 @@
 }
 
 @layer base {
+  /* Tema escuro forçado para todos os usuários, independente da preferência
+     do navegador/sistema. Garante consistência visual em todas as telas. */
   html {
+    color-scheme: dark;
     scroll-behavior: smooth;
   }
 
