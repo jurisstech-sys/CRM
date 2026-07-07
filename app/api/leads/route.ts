@@ -283,3 +283,74 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }
 }
+
+// POST: Create new lead
+export async function POST(request: NextRequest) {
+  try {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Configuração incompleta' }, { status: 500 });
+    }
+
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+    }
+
+    const accessToken = authHeader.replace('Bearer ', '');
+
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(accessToken);
+    if (userError || !user) {
+      return NextResponse.json({ error: 'Sessão inválida' }, { status: 401 });
+    }
+
+    // Use service role to bypass RLS for inserts
+    const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const body = await request.json();
+
+    // Valida campos obrigatórios
+    if (!body.title || !body.title.trim()) {
+      return NextResponse.json({ error: 'Título do lead é obrigatório' }, { status: 400 });
+    }
+
+    // Prepara dados do lead (sempre inicia no backlog, sem comercial atribuído)
+    const leadData = {
+      title: body.title.trim(),
+      description: body.description || null,
+      source: body.source || 'direct',
+      value: body.value ? parseFloat(body.value) : null,
+      expected_close_date: body.expected_close_date || null,
+      probability: body.probability ? parseFloat(body.probability) : 50,
+      client_id: body.client_id || null,
+      status: 'backlog',
+      currency: body.currency || 'BRL',
+      created_by: user.id,
+      updated_by: user.id,
+      // comercial_id permanece NULL - atribuição automática ocorre no PATCH quando
+      // o lead for movido do backlog pela primeira vez
+    };
+
+    const { data: newLead, error } = await supabase
+      .from('leads')
+      .insert([leadData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Leads API] Insert error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ lead: newLead, success: true });
+  } catch (error) {
+    console.error('[Leads API] Error creating lead:', error);
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+  }
+}

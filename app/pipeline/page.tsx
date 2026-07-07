@@ -60,34 +60,38 @@ export default function PipelinePage() {
     try {
       setIsSubmitting(true)
 
-      // Get current user
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
+      // Get current user session token
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
 
-      if (userError || !user) {
-        toast.error('Usuário não autenticado')
+      if (!token) {
+        toast.error('Sessão expirada. Faça login novamente.')
         return
       }
 
-      const { error } = await supabase.from('leads').insert([
-        {
+      // Chama a API POST para criar o lead (usa service role no backend para bypass RLS)
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           title: formData.title,
           description: formData.description || null,
           source: formData.source,
-          value: formData.value ? parseFloat(formData.value) : null,
+          value: formData.value || null,
           expected_close_date: formData.expected_close_date || null,
-          probability: formData.probability ? parseFloat(formData.probability) : 50,
+          probability: formData.probability || '50',
           client_id: formData.client_id || null,
-          status: 'backlog',
           currency: 'BRL',
-          created_by: user.id,
-          updated_by: user.id,
-        },
-      ])
+        }),
+      })
 
-      if (error) throw error
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erro ao criar lead')
+      }
 
       toast.success('Lead criado com sucesso')
       setFormData({
@@ -105,7 +109,7 @@ export default function PipelinePage() {
       window.location.reload()
     } catch (error) {
       console.error('Error creating lead:', error)
-      toast.error('Erro ao criar lead')
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar lead')
     } finally {
       setIsSubmitting(false)
     }
