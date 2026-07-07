@@ -21,6 +21,11 @@ async function getAuthUser(request: NextRequest) {
 }
 
 // GET: Fetch comments for a lead
+// Desativa o cache de fetch do Next.js para sempre retornar dados atualizados
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   try {
     if (!supabaseUrl || !supabaseAnonKey) {
