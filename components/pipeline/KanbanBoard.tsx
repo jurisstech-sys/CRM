@@ -154,6 +154,20 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     })
   )
 
+  // Regra de posse: quem pode movimentar/editar um lead.
+  // - Admin pode tudo.
+  // - Se o lead ainda não tem comercial (backlog), qualquer um pode (será o primeiro a assumir).
+  // - Se já tem comercial, somente o próprio comercial dono pode. Ninguém mais.
+  const canManageLead = useCallback(
+    (lead: Lead | null | undefined): boolean => {
+      if (!lead) return false
+      if (isAdminUser) return true
+      if (!lead.comercial_id) return true
+      return lead.comercial_id === currentUserId
+    },
+    [isAdminUser, currentUserId]
+  )
+
   // Fetch leads from Supabase
   useEffect(() => {
     fetchLeads()
@@ -373,6 +387,12 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
 
     if (oldStatus === newStatus) return
 
+    // Bloqueio de posse: um comercial não pode movimentar lead que já pertence a outro.
+    if (!canManageLead(draggedLead)) {
+      toast.error('Você não pode movimentar este lead, pois ele não é seu. Fale com um administrador.')
+      return
+    }
+
     // Optimistically update UI
     const newLeads = { ...leads }
     newLeads[oldStatus] = newLeads[oldStatus].filter((l) => l.id !== draggedLeadId)
@@ -400,9 +420,10 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       ) {
         updatePayload.comercial_id = currentUserId
         updatePayload.assigned_to = currentUserId // mantém compatibilidade / RLS
-        // mantém o objeto local em sincronia para atribuição de comissão
+        // mantém o objeto local em sincronia para atribuição de comissão e exibição imediata
         draggedLead.comercial_id = currentUserId
         draggedLead.assigned_to = currentUserId
+        draggedLead.comercial_name = currentUserName || draggedLead.comercial_name || null
         autoAssigned = true
       }
 
@@ -537,6 +558,13 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       const newStatus = updatedLead.status
       const statusChanged = oldStatus !== '' && oldStatus !== newStatus
 
+      // Bloqueio de posse: um comercial não pode editar/movimentar lead que pertence a outro.
+      if (!canManageLead(originalLead)) {
+        toast.error('Você não pode alterar este lead, pois ele não é seu. Fale com um administrador.')
+        await fetchLeads()
+        return
+      }
+
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
 
@@ -572,6 +600,7 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
         updatePayload.assigned_to = currentUserId
         updatedLead.comercial_id = currentUserId
         updatedLead.assigned_to = currentUserId
+        updatedLead.comercial_name = currentUserName || updatedLead.comercial_name || null
         autoAssigned = true
       }
 

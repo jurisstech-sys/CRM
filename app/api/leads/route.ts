@@ -114,6 +114,46 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'ID do lead é obrigatório' }, { status: 400 });
     }
 
+    // Determina se o usuário é admin
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    const isAdmin = userRow?.role === 'admin' || userRow?.role === 'super_admin';
+
+    // Regra de posse: se o lead já tem um comercial responsável diferente do usuário,
+    // apenas um admin pode alterá-lo. Bloqueia acesso via API por outros comerciais.
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('comercial_id')
+      .eq('id', id)
+      .single();
+
+    if (
+      existingLead?.comercial_id &&
+      existingLead.comercial_id !== user.id &&
+      !isAdmin
+    ) {
+      return NextResponse.json(
+        { error: 'Você não pode alterar este lead, pois ele pertence a outro comercial.' },
+        { status: 403 }
+      );
+    }
+
+    // Somente admin pode reatribuir o comercial de um lead que já possui dono.
+    if (
+      !isAdmin &&
+      'comercial_id' in updates &&
+      existingLead?.comercial_id &&
+      updates.comercial_id !== existingLead.comercial_id
+    ) {
+      return NextResponse.json(
+        { error: 'Apenas administradores podem alterar o comercial responsável.' },
+        { status: 403 }
+      );
+    }
+
     const { error } = await supabase
       .from('leads')
       .update({ ...updates, updated_at: new Date().toISOString(), updated_by: user.id })
