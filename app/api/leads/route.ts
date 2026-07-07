@@ -53,6 +53,36 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const statusFilter = searchParams.get('status');
     const statuses = statusFilter ? statusFilter.split(',') : null;
+    const searchTerm = (searchParams.get('search') || '').trim();
+
+    const SELECT_COLS_SEARCH = '*, clients(name, email), comercialUser:users!leads_comercial_id_fkey(id, full_name, email)';
+
+    // MODO BUSCA: quando há termo de pesquisa, buscamos por nome (title) em TODA a
+    // base (inclusive nos 200k+ do backlog), ignorando o limite do backlog. Assim o
+    // usuário encontra qualquer lead conforme digita, mesmo os não carregados.
+    if (searchTerm.length > 0) {
+      // escapa caracteres especiais do padrão ilike (% e _)
+      const safe = searchTerm.replace(/[%_]/g, (m) => `\\${m}`);
+      let sq = supabase
+        .from('leads')
+        .select(SELECT_COLS_SEARCH)
+        .ilike('title', `%${safe}%`)
+        .order('created_at', { ascending: false })
+        .range(0, 499); // até 500 resultados de busca
+      if (statuses) sq = sq.in('status', statuses);
+
+      const { data: searchData, error: searchErr } = await sq;
+      if (searchErr) {
+        console.error('[Leads API] Search error:', searchErr);
+        return NextResponse.json({ error: searchErr.message }, { status: 500 });
+      }
+      return NextResponse.json({
+        leads: searchData || [],
+        isAdmin,
+        search: searchTerm,
+        searchCount: searchData?.length || 0,
+      });
+    }
 
     // Limite do "pool" de Backlog não atribuído (leads sem comercial). Como a base
     // pode ter centenas de milhares de leads no Backlog, carregamos apenas os mais

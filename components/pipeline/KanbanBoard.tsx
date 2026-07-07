@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   DndContext,
   closestCorners,
@@ -21,8 +21,9 @@ import {
 } from '@dnd-kit/sortable'
 import { Lead } from './LeadCard'
 import { LeadModal } from './LeadModal'
-import { Loader2, Plus, Trash2, CheckSquare, Square } from 'lucide-react'
+import { Loader2, Plus, Trash2, CheckSquare, Square, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { logActivity } from '@/lib/activities'
@@ -104,6 +105,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   // Informação sobre o pool de Backlog (quando há mais leads do que os exibidos)
   const [backlogInfo, setBacklogInfo] = useState<{ total: number; shown: number } | null>(null)
 
+  // Busca de leads por nome (server-side, em tempo real conforme digita)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchActive, setSearchActive] = useState(false)
+  const [searchCount, setSearchCount] = useState(0)
+
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   const [showCheckboxes, setShowCheckboxes] = useState(false)
@@ -177,8 +183,24 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminUser, currentUserId])
 
-  const fetchLeads = useCallback(async () => {
+  // Busca em tempo real (debounce): conforme o usuário digita o nome, busca no servidor.
+  const isFirstSearchRun = useRef(true)
+  useEffect(() => {
+    // Ignora a primeira execução (o fetch inicial já é feito no efeito de mount)
+    if (isFirstSearchRun.current) {
+      isFirstSearchRun.current = false
+      return
+    }
+    const handle = setTimeout(() => {
+      fetchLeads(searchTerm)
+    }, 350) // aguarda 350ms após parar de digitar
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm])
+
+  const fetchLeads = useCallback(async (search?: string) => {
     try {
+      const term = (search || '').trim()
       setLoading(true)
 
       const { data: { session } } = await supabase.auth.getSession()
@@ -190,7 +212,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       }
 
       const stageIds = PIPELINE_STAGES.map(s => s.id).join(',')
-      const response = await fetch(`/api/leads?status=${stageIds}`, {
+      let url = `/api/leads?status=${stageIds}`
+      if (term.length > 0) {
+        url += `&search=${encodeURIComponent(term)}`
+      }
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -245,11 +271,20 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
 
       setLeads(grouped)
 
-      // Guarda informação de quantos leads de backlog existem vs. exibidos
-      if (typeof result.backlogTotal === 'number' && typeof result.backlogShown === 'number') {
-        setBacklogInfo({ total: result.backlogTotal, shown: result.backlogShown })
+      // Estado de busca
+      if (term.length > 0) {
+        setSearchActive(true)
+        setSearchCount(typeof result.searchCount === 'number' ? result.searchCount : (data?.length || 0))
+        setBacklogInfo(null) // durante a busca não exibimos o aviso de backlog
       } else {
-        setBacklogInfo(null)
+        setSearchActive(false)
+        setSearchCount(0)
+        // Guarda informação de quantos leads de backlog existem vs. exibidos
+        if (typeof result.backlogTotal === 'number' && typeof result.backlogShown === 'number') {
+          setBacklogInfo({ total: result.backlogTotal, shown: result.backlogShown })
+        } else {
+          setBacklogInfo(null)
+        }
       }
     } catch (error) {
       console.error('Error fetching leads:', error)
@@ -795,6 +830,37 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
                 Novo Lead
               </Button>
             </div>
+          </div>
+
+          {/* Campo de busca por nome (tempo real) */}
+          <div className="space-y-1">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar lead pelo nome..."
+                className="pl-9 pr-9 bg-slate-900/60 border-slate-700 text-white placeholder:text-slate-500"
+              />
+              {searchTerm.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  aria-label="Limpar busca"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {searchActive && !loading && (
+              <p className="text-xs text-slate-400 pl-1">
+                {searchCount > 0
+                  ? <>Mostrando <strong className="text-slate-200">{searchCount}</strong> resultado(s) para “{searchTerm}”.</>
+                  : <>Nenhum lead encontrado para “{searchTerm}”.</>}
+              </p>
+            )}
           </div>
 
           {/* Kanban Board */}
