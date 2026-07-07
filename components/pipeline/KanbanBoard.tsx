@@ -109,6 +109,10 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
   const [searchTerm, setSearchTerm] = useState('')
   const [searchActive, setSearchActive] = useState(false)
   const [searchCount, setSearchCount] = useState(0)
+  // "searching" é um indicador leve (não recarrega/oculta o quadro) para busca fluida.
+  const [searching, setSearching] = useState(false)
+  // Sequencia de requisições: descarta respostas antigas que chegam fora de ordem.
+  const searchReqId = useRef(0)
 
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
@@ -192,16 +196,23 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       return
     }
     const handle = setTimeout(() => {
-      fetchLeads(searchTerm)
-    }, 350) // aguarda 350ms após parar de digitar
+      // silent=true: busca em segundo plano, SEM ocultar/recarregar o quadro,
+      // para que a digitação continue fluida e o input não perca o foco.
+      fetchLeads(searchTerm, true)
+    }, 300) // aguarda 300ms após parar de digitar
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm])
 
-  const fetchLeads = useCallback(async (search?: string) => {
+  const fetchLeads = useCallback(async (search?: string, silent = false) => {
+    const term = (search || '').trim()
+    // Marca esta requisição como a mais recente; respostas antigas serão descartadas.
+    const reqId = ++searchReqId.current
     try {
-      const term = (search || '').trim()
-      setLoading(true)
+      // Em modo "silent" (busca) NÃO ativamos o loading que oculta o quadro,
+      // apenas um indicador leve. Isso mantém o input focado e a digitação fluida.
+      if (silent) setSearching(true)
+      else setLoading(true)
 
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
@@ -227,6 +238,11 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       }
 
       const result = await response.json()
+
+      // Se uma requisição mais nova já foi disparada (o usuário continuou digitando),
+      // descarta esta resposta para não sobrescrever resultados mais recentes.
+      if (reqId !== searchReqId.current) return
+
       const data = result.leads
 
       const grouped: PipelineData = {}
@@ -288,9 +304,14 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
       }
     } catch (error) {
       console.error('Error fetching leads:', error)
-      toast.error('Erro ao carregar leads')
+      // Não incomoda com toast durante busca silenciosa
+      if (!silent) toast.error('Erro ao carregar leads')
     } finally {
-      setLoading(false)
+      // Só limpa os indicadores se esta ainda for a requisição mais recente.
+      if (reqId === searchReqId.current) {
+        if (silent) setSearching(false)
+        else setLoading(false)
+      }
     }
   }, [isAdminUser, currentUserId])
 
@@ -843,6 +864,10 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
                 placeholder="Buscar lead pelo nome..."
                 className="pl-9 pr-9 bg-slate-900/60 border-slate-700 text-white placeholder:text-slate-500"
               />
+              {/* Indicador leve de busca (não recarrega o quadro) */}
+              {searching && (
+                <Loader2 className="absolute right-9 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+              )}
               {searchTerm.length > 0 && (
                 <button
                   type="button"
@@ -854,11 +879,13 @@ export function KanbanBoard({ onCreateLead, isAdminUser = false, canDeleteLeads 
                 </button>
               )}
             </div>
-            {searchActive && !loading && (
+            {searchActive && (
               <p className="text-xs text-slate-400 pl-1">
-                {searchCount > 0
-                  ? <>Mostrando <strong className="text-slate-200">{searchCount}</strong> resultado(s) para “{searchTerm}”.</>
-                  : <>Nenhum lead encontrado para “{searchTerm}”.</>}
+                {searching
+                  ? <>Buscando “{searchTerm}”…</>
+                  : searchCount > 0
+                    ? <>Mostrando <strong className="text-slate-200">{searchCount}</strong> resultado(s) para “{searchTerm}”.</>
+                    : <>Nenhum lead encontrado para “{searchTerm}”.</>}
               </p>
             )}
           </div>
